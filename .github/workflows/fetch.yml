@@ -49,10 +49,13 @@ jobs:
       - name: 取得するか決める
         id: decide
         run: |
+          python check_alert.py && ALERT=1 || ALERT=0
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "days=${{ github.event.inputs.days }}" >> "$GITHUB_OUTPUT"
-          elif python check_alert.py; then
+            echo "trigger=manual" >> "$GITHUB_OUTPUT"
+          elif [ "$ALERT" = "1" ]; then
             echo "days=6" >> "$GITHUB_OUTPUT"
+            echo "trigger=alert" >> "$GITHUB_OUTPUT"
           else
             echo "days=" >> "$GITHUB_OUTPUT"
           fi
@@ -65,12 +68,17 @@ jobs:
           python fetch_toyama_city.py --days $D
           python fetch_jma_tide.py --days $D
           python upload_drive.py
+          python update_status.py fetched $D ${{ steps.decide.outputs.trigger }}
+
+      - name: 取得状況を更新
+        if: steps.decide.outputs.days == ''
+        run: python update_status.py idle
 
       - name: 地図用の最新値をコミット
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/*.geojson data/stations.csv data/*/stations.csv
+          git add docs/*.geojson docs/*.json data/stations.csv data/*/stations.csv
           if git diff --cached --quiet; then
             echo "no changes"
           else

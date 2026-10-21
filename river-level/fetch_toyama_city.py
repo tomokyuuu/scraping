@@ -26,6 +26,8 @@ import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from series import write_series
+
 BASE = "https://tscs.city.toyama.lg.jp/map/"
 UA = "Mozilla/5.0 (river-level logger; github actions)"
 PANEL = "3"  # 河川水位情報
@@ -121,6 +123,7 @@ def main(days_back: int) -> None:
 
     if days_back > 0:
         write_day_files(rows, days)
+        write_series("toyama_city", rows, "stg", start, now, kind_key=None)
         print(f"toyama_city: {len(rows)} values")
 
     DATA.mkdir(parents=True, exist_ok=True)

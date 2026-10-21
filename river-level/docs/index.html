@@ -8,10 +8,11 @@
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
-  :root { --bg: #fff; --fg: #222; --panel: rgba(255,255,255,.94); --line: #ddd; --accent: #1f5fbf; }
+  :root { --bg: #fff; --fg: #222; --panel: rgba(255,255,255,.94); --line: #ddd; --accent: #1f5fbf; --muted: #777; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #1b1d21; --fg: #eee; --panel: rgba(32,34,38,.94); --line: #444; --accent: #7cb0ff; }
+    :root { --bg: #1b1d21; --fg: #eee; --panel: rgba(32,34,38,.94); --line: #444; --accent: #7cb0ff; --muted: #aaa; }
   }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
     font-family: system-ui, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif; }
@@ -19,60 +20,82 @@
   #head { position: absolute; top: 0; left: 0; right: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px 14px;
     align-items: center; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--line); font-size: 14px; }
   #head h1 { font-size: 16px; margin: 0 8px 0 0; }
-  #head a { color: var(--accent); }
+  #head a, #panel a { color: var(--accent); }
   #head label { display: inline-flex; align-items: center; gap: 4px; }
+  #head button, #panel button { font: inherit; font-size: 13px; padding: 2px 10px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--bg); color: var(--fg); cursor: pointer; }
+  #status { padding: 2px 10px; border-radius: 12px; background: #e8e8e8; color: #333; font-size: 13px; }
+  #status.active { background: #ffe0e0; color: #a00; font-weight: 600; }
   #legend { position: absolute; left: 16px; bottom: 28px; z-index: 2; background: var(--panel); border: 1px solid var(--line);
     border-radius: 8px; padding: 8px 12px; font-size: 12px; line-height: 1.7; cursor: move; user-select: none; touch-action: none; }
-  #legend .ttl { font-weight: 600; color: #888; font-size: 11px; margin-bottom: 2px; }
-  .sw { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid #fff; vertical-align: -2px; margin-right: 6px; box-shadow: 0 0 0 1px #0004; }
+  #legend .ttl { font-weight: 600; color: var(--muted); font-size: 11px; margin-bottom: 2px; }
+  .sw { display: inline-block; width: 11px; height: 11px; border-radius: 50%; border: 1px solid #555; vertical-align: -2px; margin-right: 6px; background: #fff; }
   .sw.sq { border-radius: 2px; }
+  .sw.dia { border-radius: 0; transform: rotate(45deg); width: 9px; height: 9px; }
+  .sw.ring { box-shadow: 0 0 0 3px #e03030; }
+  #panel { position: absolute; top: 56px; right: 10px; z-index: 3; width: min(560px, calc(100vw - 20px)); max-height: calc(100vh - 70px);
+    overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: none;
+    box-shadow: 0 4px 16px #0003; font-size: 13px; }
+  #panel.show { display: block; }
+  #panel h2 { font-size: 15px; margin: 0 0 6px; display: flex; justify-content: space-between; align-items: center; }
+  #panel .tree ul { list-style: none; margin: 0; padding-left: 16px; }
+  #panel .tree li { line-height: 1.6; white-space: nowrap; }
+  #panel .tree .fo { font-weight: 600; }
+  #panel .tree small { color: var(--muted); margin-left: 6px; }
+  #chartWrap { position: relative; height: 300px; }
   .maplibregl-popup-content { color: #222; font-size: 13px; line-height: 1.6; min-width: 220px; }
   .maplibregl-popup-content b { font-size: 14px; }
   .maplibregl-popup-content table { border-collapse: collapse; margin-top: 4px; }
   .maplibregl-popup-content td { padding: 0 8px 0 0; white-space: nowrap; }
   .maplibregl-popup-content .big { font-size: 22px; font-weight: 700; }
+  .maplibregl-popup-content button { font: inherit; font-size: 13px; padding: 2px 10px; border: 1px solid #bbb; border-radius: 6px; background: #f4f4f4; cursor: pointer; }
   .maplibregl-ctrl-attrib { font-size: 11px; }
 </style>
 </head>
 <body>
 <div id="head">
   <h1>石川・富山 河川水位</h1>
-  <span id="updated">読み込み中…</span>
+  <span id="status">読み込み中…</span>
+  <span id="updated"></span>
   <label><input type="checkbox" id="chkStg" checked> 水位計</label>
   <label><input type="checkbox" id="chkSw" checked> 危機管理型</label>
   <label><input type="checkbox" id="chkCity" checked> 富山市</label>
   <label><input type="checkbox" id="chkTide" checked> 潮位</label>
   <label><input type="checkbox" id="chkMissing"> 欠測も表示</label>
+  <label><input type="checkbox" id="chkTrig"> トリガー地点</label>
   <select id="base">
     <option value="gsi-pale">地理院 淡色</option>
     <option value="gsi-std">地理院 標準</option>
     <option value="gsi-photo">航空写真</option>
     <option value="osm">OpenStreetMap</option>
   </select>
-  <a id="dataLink" href="https://github.com/tomokyuuu/scraping/tree/main/data" target="_blank" rel="noopener">保存データ（GitHub）</a>
+  <button id="btnLedger">データ台帳</button>
+  <a id="dataLink" href="https://drive.google.com/drive/folders/1Hzr2jctAziRDwGx7jakB7aGb4kvA_D5W" target="_blank" rel="noopener">保存先（Drive）</a>
   <a href="https://www.river.go.jp/" target="_blank" rel="noopener">出典: 川の防災情報</a>
 </div>
 <div id="map"></div>
 <div id="legend">
   <div class="ttl">凡例（ドラッグで移動）</div>
-  <div><span class="sw" style="background:#2e8b57"></span>平常</div>
-  <div><span class="sw" style="background:#f2c100"></span>水防団待機</div>
-  <div><span class="sw" style="background:#f28c00"></span>氾濫注意</div>
-  <div><span class="sw" style="background:#e03030"></span>避難判断</div>
-  <div><span class="sw" style="background:#8b008b"></span>氾濫危険・以上</div>
-  <div><span class="sw" style="background:#999"></span>欠測</div>
-  <div><span class="sw sq" style="background:#2e8b57"></span>四角＝危機管理型</div>
-  <div><span class="sw" style="background:#1f77d0"></span>青＝富山市（基準なし）</div>
-  <div><span class="sw" style="background:#0aa; border-radius:0; transform:rotate(45deg); width:10px; height:10px"></span>菱形＝潮位（気象庁）</div>
+  <div><span class="sw"></span>平常（○ 水位計 / <span class="sw sq" style="margin:0 2px 0 0"></span>危機管理型 / <span class="sw dia" style="margin:0 4px 0 2px"></span>潮位）</div>
+  <div><span class="sw" style="background:#e03030"></span>氾濫危険水位 以上</div>
+  <div><span class="sw" style="background:#8b008b"></span>氾濫開始・計画高水位 以上</div>
+  <div><span class="sw" style="background:#bbb"></span>欠測</div>
+  <div><span class="sw ring"></span>取得のトリガーになった地点</div>
+</div>
+<div id="panel">
+  <h2><span id="panelTitle"></span><button id="panelClose">閉じる</button></h2>
+  <div id="panelBody"></div>
 </div>
 <script>
+// Drive の読み取り口（Apps Script。読み取り専用・トークン不要）
+const API_URL = "https://script.google.com/macros/s/AKfycbz45llyadCop21B1jEulhERWJw13LyrJMVpZvgzt5v26xK5uqBaE-QWsibhmldYyAS5/exec";
+
 const TILES = {
   "gsi-pale": ["https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png", "地図:国土地理院"],
   "gsi-std": ["https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png", "地図:国土地理院"],
   "gsi-photo": ["https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg", "地図:国土地理院"],
   "osm": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png", "&copy; OpenStreetMap contributors"],
 };
-const LEVEL_COLOR = ["#2e8b57", "#f2c100", "#f28c00", "#e03030", "#8b008b", "#8b008b"];
 
 function style(key) {
   const [url, attr] = TILES[key];
@@ -82,41 +105,43 @@ function style(key) {
 
 const map = new maplibregl.Map({ container: "map", style: style("gsi-pale"), center: [136.9, 36.75], zoom: 8.3 });
 map.addControl(new maplibregl.NavigationControl(), "top-right");
-map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true } }), "top-right");
+// 現在地ボタン。位置情報はボタンを押したときだけ求める（自動追跡しない）
+map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: false }), "top-right");
 
-let data = null;
+let data = null, alert = { over: [] }, status = {};
 const markers = [];
+const SRC_OF = { stg: p => p.pref, swstg: p => p.pref, city: () => "toyama_city", tide: () => "jma_tide" };
 
-// 水位と基準水位の比較で色レベルを決める（0=平常 1=待機 2=注意 3=避難判断 4=危険 5=氾濫）。
-// サイトの stg_ovlvl は欠測でも 30 が入るなど種別で意味が違うので使わない。
+// 0=平常 1=氾濫危険以上 2=氾濫開始・計画高水位以上 -1=欠測。色は氾濫危険から付ける
 function levelOf(p) {
-  if (p.stg == null || p.stg_ccd) return -1;
-  // 危機管理型: rsrv_stg=観測開始, dng_stg=氾濫危険, fld_stg=氾濫開始
-  const thr = p.kind === "swstg" ? [null, null, null, p.dng_stg, p.fld_stg]
-                                 : [p.rsrv_stg, p.warn_stg, p.spcl_warn_stg, p.dng_stg, p.fld_stg];
-  if (thr.every(t => t == null)) return 0; // 基準水位が未設定でも値があれば平常色で出す
-  let lv = 0;
-  thr.forEach((t, i) => { if (t != null && p.stg >= t) lv = i + 1; });
-  return lv;
+  const v = p.kind === "tide" ? p.tide_cm : p.stg;
+  if (v == null || p.stg_ccd) return -1;
+  if (p.kind === "city" || p.kind === "tide") return 0;
+  if (p.fld_stg != null && v >= p.fld_stg) return 2;
+  if (p.dng_stg != null && v >= p.dng_stg) return 1;
+  return 0;
 }
+const LEVEL_COLOR = ["#fff", "#e03030", "#8b008b"];
 
-function fmt(v) { return v == null ? "--" : v.toFixed(2); }
+function fmt(v) { return v == null ? "--" : (+v).toFixed(2); }
+function isTrigger(p) { return alert.over.some(o => o.obs_id === p.obs_id && o.kind === p.kind); }
 
 function popupHtml(p) {
+  const src = SRC_OF[p.kind](p);
+  const graphBtn = status.active || status.last_fetch
+    ? `<button onclick="showChart('${src}','${p.obs_id}')">グラフ（保存中データ）</button>` : `<small>保存中のデータなし</small>`;
   if (p.kind === "tide") {
     return `<b>${p.obs_nm}</b> <small>潮位・${p.operator ?? ""}</small><br>
       <span class="big">${p.tide_cm ?? "--"}</span> cm <small>${p.obs_time ?? ""}</small>
       ${p.departure_cm != null ? `<div>偏差 ${p.departure_cm} cm</div>` : ""}
       <div><small>基準: ${p.reference ?? ""}</small></div>
-      <div style="margin-top:6px"><a href="${p.url}" target="_blank" rel="noopener">気象庁で開く</a> ·
-      <a href="https://github.com/tomokyuuu/scraping/tree/main/data/jma_tide" target="_blank" rel="noopener">CSV</a></div>`;
+      <div style="margin-top:6px">${graphBtn} <a href="${p.url}" target="_blank" rel="noopener">気象庁</a></div>`;
   }
   if (p.kind === "city") {
     return `<b>${p.obs_nm}</b> <small>富山市</small><br>
       <span class="big">${fmt(p.stg)}</span> m <small>${p.obs_time ?? ""}</small>
       ${p.diff != null ? `<div>前回比 ${p.diff} m</div>` : ""}
-      <div style="margin-top:6px"><a href="${p.url}" target="_blank" rel="noopener">富山市サイトで開く</a> ·
-      <a href="https://github.com/tomokyuuu/scraping/tree/main/data/toyama_city" target="_blank" rel="noopener">CSV</a></div>`;
+      <div style="margin-top:6px">${graphBtn} <a href="${p.url}" target="_blank" rel="noopener">富山市サイト</a></div>`;
   }
   const url = p.kind === "stg"
     ? `https://www.river.go.jp/kawabou/pc/tm?zm=15&ofcCd=${p.obs_id.slice(0, 5) * 1}&itmkndCd=4&obsCd=${p.obs_id.slice(-5) * 1}`
@@ -126,11 +151,11 @@ function popupHtml(p) {
     : [["観測開始", p.rsrv_stg], ["氾濫危険", p.dng_stg], ["氾濫開始", p.fld_stg]];
   const rows = thr.filter(([, v]) => v != null).map(([k, v]) => `<tr><td>${k}</td><td>${fmt(v)} m</td></tr>`).join("");
   const miss = p.stg == null || p.stg_ccd ? `<div style="color:#c00">欠測 (code ${p.stg_ccd ?? "-"})</div>` : "";
+  const trig = isTrigger(p) ? `<div style="color:#c00">▶ 取得のトリガー地点（氾濫注意水位以上）</div>` : "";
   return `<b>${p.obs_nm}</b> <small>${p.kind === "stg" ? "水位計" : "危機管理型"}</small><br>
-    <span class="big">${fmt(p.stg)}</span> m <small>${p.obs_time ?? ""}</small>${miss}
+    <span class="big">${fmt(p.stg)}</span> m <small>${p.obs_time ?? ""}</small>${miss}${trig}
     <table>${rows}</table>
-    <div style="margin-top:6px"><a href="${url}" target="_blank" rel="noopener">川の防災情報で開く</a> ·
-    <a href="https://github.com/tomokyuuu/scraping/tree/main/data/${p.pref}" target="_blank" rel="noopener">CSV</a></div>`;
+    <div style="margin-top:6px">${graphBtn} <a href="${url}" target="_blank" rel="noopener">川の防災情報</a></div>`;
 }
 
 function render() {
@@ -138,20 +163,20 @@ function render() {
   markers.length = 0;
   if (!data) return;
   const show = { stg: chkStg.checked, swstg: chkSw.checked, city: chkCity.checked, tide: chkTide.checked };
-  const showMissing = chkMissing.checked;
+  const showMissing = chkMissing.checked, showTrig = chkTrig.checked;
   let shown = 0;
   for (const f of data.features) {
     const p = f.properties;
     if (!show[p.kind]) continue;
-    const lv = p.kind === "city" ? (p.stg == null ? -1 : 0)
-             : p.kind === "tide" ? (p.tide_cm == null ? -1 : 0) : levelOf(p);
+    const lv = levelOf(p);
     if (lv < 0 && !showMissing) continue;
+    const trig = showTrig && isTrigger(p);
     const el = document.createElement("div");
-    const size = lv >= 2 ? 14 : 8;
-    const color = lv < 0 ? "#999" : p.kind === "city" ? "#1f77d0" : p.kind === "tide" ? "#0aa" : LEVEL_COLOR[lv];
+    const size = lv >= 1 ? 14 : 8;
+    const color = lv < 0 ? "#bbb" : LEVEL_COLOR[lv];
     const shape = p.kind === "swstg" ? "border-radius:2px" : p.kind === "tide" ? "border-radius:0;transform:rotate(45deg)" : "border-radius:50%";
-    el.style.cssText = `width:${size}px;height:${size}px;border:1px solid #fff;box-shadow:0 0 0 1px #0005;cursor:pointer;` +
-      `background:${color};${shape}`;
+    el.style.cssText = `width:${size}px;height:${size}px;border:1px solid #444;cursor:pointer;background:${color};${shape};` +
+      (trig ? "box-shadow:0 0 0 3px #e03030;" : "box-shadow:0 0 0 1px #fff;");
     el.title = p.kind === "tide" ? `${p.obs_nm} ${p.tide_cm ?? "--"} cm` : `${p.obs_nm} ${fmt(p.stg)} m`;
     const m = new maplibregl.Marker({ element: el }).setLngLat(f.geometry.coordinates)
       .setPopup(new maplibregl.Popup({ offset: 10, maxWidth: "320px" }).setHTML(popupHtml(p))).addTo(map);
@@ -159,23 +184,92 @@ function render() {
     shown++;
   }
   updated.textContent = `更新 ${data.updated}（${shown} / ${data.features.length} 地点）`;
+  const st = document.getElementById("status");
+  if (status.active) {
+    st.className = "active";
+    st.textContent = `取得中 ${status.since ?? ""}〜（最終 ${status.last_fetch}、トリガー ${alert.over.length} 地点）`;
+  } else {
+    st.className = "";
+    st.textContent = status.last_fetch ? `待機中（最終取得 ${status.last_fetch}）` : "待機中（取得なし）";
+  }
+}
+
+async function getJson(name) {
+  try { return await (await fetch(name + "?t=" + Date.now(), { cache: "no-store" })).json(); } catch (e) { return null; }
 }
 
 async function load() {
-  try {
-    const t = Date.now();
-    const [a, b, c] = await Promise.all([
-      fetch("latest.geojson?t=" + t, { cache: "no-store" }).then(r => r.json()),
-      fetch("latest_toyama_city.geojson?t=" + t, { cache: "no-store" }).then(r => r.json()).catch(() => ({ features: [] })),
-      fetch("latest_jma_tide.geojson?t=" + t, { cache: "no-store" }).then(r => r.json()).catch(() => ({ features: [] })),
-    ]);
-    data = { updated: a.updated, features: [...a.features, ...b.features, ...c.features] };
-    if (a.data_url) dataLink.href = a.data_url;
-    render();
-  } catch (e) {
-    updated.textContent = "読み込み失敗: " + e;
-  }
+  const [a, b, c, al, st] = await Promise.all([
+    getJson("latest.geojson"), getJson("latest_toyama_city.geojson"), getJson("latest_jma_tide.geojson"),
+    getJson("alert.json"), getJson("status.json")]);
+  if (!a) { updated.textContent = "読み込み失敗"; return; }
+  data = { updated: a.updated, features: [...a.features, ...(b?.features ?? []), ...(c?.features ?? [])] };
+  alert = al ?? { over: [] };
+  status = st ?? {};
+  if (a.data_url) dataLink.href = a.data_url;
+  render();
 }
+
+// ---- パネル（グラフ / データ台帳）----
+const panel = document.getElementById("panel"), panelTitle = document.getElementById("panelTitle"), panelBody = document.getElementById("panelBody");
+let chart = null;
+function openPanel(title, html) { panelTitle.textContent = title; panelBody.innerHTML = html; panel.classList.add("show"); }
+panelClose.onclick = () => { panel.classList.remove("show"); if (chart) { chart.destroy(); chart = null; } };
+
+async function showChart(src, id) {
+  openPanel("時系列", "<div>Drive から読み込み中…（数秒かかります）</div>");
+  let r;
+  try { r = await (await fetch(`${API_URL}?series=${src}&id=${encodeURIComponent(id)}`)).json(); }
+  catch (e) { panelBody.textContent = "読み込み失敗: " + e; return; }
+  if (!r.ok) { panelBody.textContent = "取得できません: " + r.error; return; }
+  const p = data.features.map(f => f.properties).find(q => q.obs_id === id) ?? {};
+  const t0 = new Date(r.t0.replace(/\//g, "-").replace(" ", "T") + ":00");
+  const labels = r.v.map((_, i) => new Date(t0.getTime() + i * r.step * 60000));
+  const unit = src === "jma_tide" ? "cm" : "m";
+  panelTitle.textContent = `${r.name}（${src}）`;
+  panelBody.innerHTML = `<div id="chartWrap"><canvas id="cv"></canvas></div>
+    <div><small>Drive の series/${src}.json、更新 ${r.updated}。${r.step}分値 ${r.v.filter(v => v != null).length} 点</small></div>`;
+  const datasets = [{ label: `水位 [${unit}]`, data: r.v, borderColor: "#1f5fbf", borderWidth: 1.5, pointRadius: 0, spanGaps: false }];
+  const lines = [["水防団待機", p.rsrv_stg, "#f2c100"], ["氾濫注意", p.warn_stg, "#f28c00"], ["避難判断", p.spcl_warn_stg, "#e03030"],
+                 ["氾濫危険", p.dng_stg, "#8b008b"], ["計画高水位/氾濫開始", p.fld_stg, "#444"]];
+  for (const [label, v, color] of lines) {
+    if (v != null && src !== "jma_tide" && src !== "toyama_city")
+      datasets.push({ label, data: r.v.map(() => v), borderColor: color, borderWidth: 1, borderDash: [4, 4], pointRadius: 0 });
+  }
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  chart = new Chart(document.getElementById("cv"), {
+    type: "line",
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: { legend: { labels: { color: dark ? "#ddd" : "#333", boxWidth: 18 } } },
+      scales: {
+        x: { ticks: { color: dark ? "#ccc" : "#444", maxTicksLimit: 8,
+               callback: (v, i) => { const d = labels[i]; return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; } },
+             grid: { color: dark ? "#444" : "#e5e5e5" } },
+        y: { ticks: { color: dark ? "#ccc" : "#444" }, grid: { color: dark ? "#444" : "#e5e5e5" }, title: { display: true, text: unit } },
+      },
+    },
+  });
+}
+
+function treeHtml(node) {
+  const fmtSize = n => n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : n + " B";
+  const files = node.files.map(f => `<li><a href="${f.url}" target="_blank" rel="noopener">${f.name}</a><small>${fmtSize(f.size)} · ${f.updated.slice(0, 16).replace("T", " ")}</small></li>`).join("");
+  const folders = node.folders.map(c => `<li><span class="fo">📁 ${c.name}</span>${treeHtml(c)}</li>`).join("");
+  return `<ul>${folders}${files}</ul>`;
+}
+
+btnLedger.onclick = async () => {
+  openPanel("データ台帳（Drive）", "<div>Drive を読み込み中…</div>");
+  let r;
+  try { r = await (await fetch(`${API_URL}?tree=1`)).json(); } catch (e) { panelBody.textContent = "読み込み失敗: " + e; return; }
+  if (!r.ok) { panelBody.textContent = "取得できません: " + r.error; return; }
+  const desc = `<div style="margin-bottom:6px"><a href="${r.root}" target="_blank" rel="noopener">${r.tree.name}</a> を Drive で開く ·
+    ishikawa / toyama = 川の防災情報（国交省）、toyama_city = 富山市、jma_tide = 気象庁潮位。日別 CSV（10分値）。series/ は地図のグラフ用</div>`;
+  panelBody.innerHTML = desc + `<div class="tree">${treeHtml(r.tree)}</div>`;
+};
 
 // 凡例をドラッグで移動。位置はこのブラウザに記憶する
 (function () {
@@ -195,14 +289,14 @@ async function load() {
     el.setPointerCapture(e.pointerId);
   });
   el.addEventListener("pointermove", e => { if (drag) place(e.clientX - drag.dx, e.clientY - drag.dy); });
-  el.addEventListener("pointerup", e => {
+  el.addEventListener("pointerup", () => {
     if (!drag) return;
     drag = null;
     try { localStorage.setItem("legendPos", JSON.stringify({ x: el.offsetLeft, y: el.offsetTop })); } catch (e2) { /* 無視 */ }
   });
 })();
 
-[chkStg, chkSw, chkCity, chkTide, chkMissing].forEach(c => c.addEventListener("change", render));
+[chkStg, chkSw, chkCity, chkTide, chkMissing, chkTrig].forEach(c => c.addEventListener("change", render));
 base.addEventListener("change", () => map.setStyle(style(base.value)));
 map.on("load", load);
 setInterval(load, 10 * 60 * 1000);

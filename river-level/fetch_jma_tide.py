@@ -25,6 +25,8 @@ import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from series import write_series
+
 BASE = "https://www.jma.go.jp/bosai/tidelevel/"
 UA = "Mozilla/5.0 (river-level logger; github actions)"
 PREF_PREFIX = {"16": "toyama", "17": "ishikawa"}
@@ -111,6 +113,9 @@ def main(days_back: int) -> None:
                                      "tide_cm": latest["tide_cm"] if latest else None,
                                      "departure_cm": latest["departure_cm"] if latest else None,
                                      "url": BASE + f"#area_type=class20s&point_code={st['obs_id']}"}})
+    if days_back > 0:
+        write_series("jma_tide", [r for rows in by_day.values() for r in rows], "tide_cm",
+                     today - timedelta(days=days_back), datetime.now(), kind_key=None)
     n = 0
     for day, rows in by_day.items():
         if not rows:

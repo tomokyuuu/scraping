@@ -31,6 +31,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from series import write_series
+
 BASE = "https://www.river.go.jp/kawabou/file"
 UA = "Mozilla/5.0 (river-level logger; github actions)"
 PREFS = {"1701": "ishikawa", "1601": "toyama"}
@@ -167,13 +169,16 @@ def main(days_back: int) -> None:
             if t.get("swExistFlg"):
                 stations += fetch_town(pref, t["twnCd"], "swstg", now_path)
 
-        # 通常水位計は窓ごと、危機管理型は1週間ぶんが1回で返るので now だけ
-        jobs = [(s, p) for s in stations for p in (paths if s["kind"] == "stg" else [now_path])]
+        # 通常水位計は窓ごと、危機管理型は1週間ぶんが1回で返るので now だけ。--days 0 は地図更新のみ
+        jobs = [] if days_back == 0 else \
+            [(s, p) for s in stations for p in (paths if s["kind"] == "stg" else [now_path])]
         rows: list[dict] = []
         with ThreadPoolExecutor(max_workers=8) as ex:
             for r in ex.map(lambda j: fetch_min10(*j), jobs):
                 rows += r
-        write_day_files(pref, rows, days)
+        if days_back > 0:
+            write_day_files(pref, rows, days)
+            write_series(pref, rows, "stg", datetime.strptime(days[0], "%Y-%m-%d"), now)
         print(f"{pref}: {len(stations)} stations, {len(jobs)} requests, {len(rows)} values")
         all_stations += stations
 

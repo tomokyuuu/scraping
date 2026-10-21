@@ -50,6 +50,7 @@ def main() -> None:
     args = sys.argv[1:]
     since = args[args.index("--since") + 1] if "--since" in args else ""
     files = sorted(p for p in DATA.rglob("*.csv") if p.name != "stations.csv" and p.stem >= since)
+    files += sorted(DATA.glob("series/*.json"))  # 地図のグラフ用
     for p in files:
         rel = p.relative_to(DATA).as_posix()
         res = upload(url, token, rel, p.read_text(encoding="utf-8"))
