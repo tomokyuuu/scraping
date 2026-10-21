@@ -29,6 +29,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  TZ: Asia/Tokyo
   DRIVE_UPLOAD_URL: ${{ secrets.DRIVE_UPLOAD_URL }}
   DRIVE_TOKEN: ${{ secrets.DRIVE_TOKEN }}
   # 地図の「保存データ」リンク先（Drive のフォルダ URL）
