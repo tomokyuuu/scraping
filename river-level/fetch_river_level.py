@@ -74,12 +74,20 @@ def fetch_town(pref: str, twn: int, kind: str, date_path: str) -> list[dict]:
     if not d:
         print(f"skip {pref}/{twn}/{kind}", file=sys.stderr)
         return []
+    # 通常水位計の GeoJSON には水位値そのものが無いので、一覧 JSON から取る
+    tm: dict[str, dict] = {}
+    if kind == "stg":
+        lst = get_json(f"/files/obslist/tm/twnlist/{date_path}/{twn}.json") or {}
+        tm = {v["obsFcd"]: v for v in lst.get("tmList", {}).get("tmStg", [])}
     out = []
     for f in d["features"]:
         p = f["properties"]
         if kind == "stg":
             oid, name, rvr = p["obs_fcd"], p["obs_nm"], p.get("rvr_cd")
             thr = (p.get("rsrv_stg"), p.get("warn_stg"), p.get("spcl_warn_stg"), p.get("dng_stg"), p.get("fld_stg"))
+            v = tm.get(oid, {})
+            p = {**p, "stg": v.get("stg"), "obs_time": v.get("obsTime", p.get("obs_time")),
+                 "stg_ccd": v.get("stgCcd", p.get("stg_ccd")), "stg_ovlvl": v.get("stgOvlvl", p.get("stg_ovlvl"))}
             ccd, ovlvl = p.get("stg_ccd"), p.get("stg_ovlvl")
         else:
             oid, name, rvr = str(p["swobs_cd"]), p["swobs_nm"], p.get("swrvr_cd")

@@ -22,7 +22,8 @@
   #head a { color: var(--accent); }
   #head label { display: inline-flex; align-items: center; gap: 4px; }
   #legend { position: absolute; left: 16px; bottom: 28px; z-index: 2; background: var(--panel); border: 1px solid var(--line);
-    border-radius: 8px; padding: 8px 12px; font-size: 12px; line-height: 1.7; }
+    border-radius: 8px; padding: 8px 12px; font-size: 12px; line-height: 1.7; cursor: move; user-select: none; touch-action: none; }
+  #legend .ttl { font-weight: 600; color: #888; font-size: 11px; margin-bottom: 2px; }
   .sw { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid #fff; vertical-align: -2px; margin-right: 6px; box-shadow: 0 0 0 1px #0004; }
   .sw.sq { border-radius: 2px; }
   .maplibregl-popup-content { color: #222; font-size: 13px; line-height: 1.6; min-width: 220px; }
@@ -53,12 +54,13 @@
 </div>
 <div id="map"></div>
 <div id="legend">
+  <div class="ttl">凡例（ドラッグで移動）</div>
   <div><span class="sw" style="background:#2e8b57"></span>平常</div>
   <div><span class="sw" style="background:#f2c100"></span>水防団待機</div>
   <div><span class="sw" style="background:#f28c00"></span>氾濫注意</div>
   <div><span class="sw" style="background:#e03030"></span>避難判断</div>
   <div><span class="sw" style="background:#8b008b"></span>氾濫危険・以上</div>
-  <div><span class="sw" style="background:#999"></span>欠測・基準なし</div>
+  <div><span class="sw" style="background:#999"></span>欠測</div>
   <div><span class="sw sq" style="background:#2e8b57"></span>四角＝危機管理型</div>
   <div><span class="sw" style="background:#1f77d0"></span>青＝富山市（基準なし）</div>
   <div><span class="sw" style="background:#0aa; border-radius:0; transform:rotate(45deg); width:10px; height:10px"></span>菱形＝潮位（気象庁）</div>
@@ -92,7 +94,7 @@ function levelOf(p) {
   // 危機管理型: rsrv_stg=観測開始, dng_stg=氾濫危険, fld_stg=氾濫開始
   const thr = p.kind === "swstg" ? [null, null, null, p.dng_stg, p.fld_stg]
                                  : [p.rsrv_stg, p.warn_stg, p.spcl_warn_stg, p.dng_stg, p.fld_stg];
-  if (thr.every(t => t == null)) return p.kind === "swstg" ? 0 : -1;
+  if (thr.every(t => t == null)) return 0; // 基準水位が未設定でも値があれば平常色で出す
   let lv = 0;
   thr.forEach((t, i) => { if (t != null && p.stg >= t) lv = i + 1; });
   return lv;
@@ -145,10 +147,10 @@ function render() {
              : p.kind === "tide" ? (p.tide_cm == null ? -1 : 0) : levelOf(p);
     if (lv < 0 && !showMissing) continue;
     const el = document.createElement("div");
-    const size = lv >= 2 ? 18 : 12;
+    const size = lv >= 2 ? 14 : 8;
     const color = lv < 0 ? "#999" : p.kind === "city" ? "#1f77d0" : p.kind === "tide" ? "#0aa" : LEVEL_COLOR[lv];
     const shape = p.kind === "swstg" ? "border-radius:2px" : p.kind === "tide" ? "border-radius:0;transform:rotate(45deg)" : "border-radius:50%";
-    el.style.cssText = `width:${size}px;height:${size}px;border:1.5px solid #fff;box-shadow:0 0 0 1px #0005;cursor:pointer;` +
+    el.style.cssText = `width:${size}px;height:${size}px;border:1px solid #fff;box-shadow:0 0 0 1px #0005;cursor:pointer;` +
       `background:${color};${shape}`;
     el.title = p.kind === "tide" ? `${p.obs_nm} ${p.tide_cm ?? "--"} cm` : `${p.obs_nm} ${fmt(p.stg)} m`;
     const m = new maplibregl.Marker({ element: el }).setLngLat(f.geometry.coordinates)
@@ -174,6 +176,31 @@ async function load() {
     updated.textContent = "読み込み失敗: " + e;
   }
 }
+
+// 凡例をドラッグで移動。位置はこのブラウザに記憶する
+(function () {
+  const el = legend;
+  const place = (x, y) => {
+    x = Math.max(0, Math.min(innerWidth - el.offsetWidth, x));
+    y = Math.max(0, Math.min(innerHeight - el.offsetHeight, y));
+    el.style.left = x + "px"; el.style.top = y + "px"; el.style.bottom = "auto";
+  };
+  try {
+    const s = JSON.parse(localStorage.getItem("legendPos") || "null");
+    if (s) place(s.x, s.y);
+  } catch (e) { /* 記憶なし */ }
+  let drag = null;
+  el.addEventListener("pointerdown", e => {
+    drag = { dx: e.clientX - el.offsetLeft, dy: e.clientY - el.offsetTop };
+    el.setPointerCapture(e.pointerId);
+  });
+  el.addEventListener("pointermove", e => { if (drag) place(e.clientX - drag.dx, e.clientY - drag.dy); });
+  el.addEventListener("pointerup", e => {
+    if (!drag) return;
+    drag = null;
+    try { localStorage.setItem("legendPos", JSON.stringify({ x: el.offsetLeft, y: el.offsetTop })); } catch (e2) { /* 無視 */ }
+  });
+})();
 
 [chkStg, chkSw, chkCity, chkTide, chkMissing].forEach(c => c.addEventListener("change", render));
 base.addEventListener("change", () => map.setStyle(style(base.value)));
