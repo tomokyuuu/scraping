@@ -1,6 +1,14 @@
 name: river level
 
 on:
+  # コードや地図ページを push したらすぐ反映（bot がコミットする geojson/json は含めないのでループしない）
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fetch.yml"
+      - "river-level/*.py"
+      - "river-level/docs/index.html"
+      - "river-level/docs/icon.*"
   schedule:
     # 毎時: 最新値で地図を更新。氾濫注意水位以上の観測所があれば直近1週間の10分値を Drive に保存
     - cron: "7 * * * *"
