@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>石川・富山 河川水位</title>
+<link rel="icon" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+  :root { --bg: #fff; --fg: #222; --panel: rgba(255,255,255,.94); --line: #ddd; --accent: #1f5fbf; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1b1d21; --fg: #eee; --panel: rgba(32,34,38,.94); --line: #444; --accent: #7cb0ff; }
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font-family: system-ui, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif; }
+  #map { position: absolute; inset: 0; }
+  #head { position: absolute; top: 0; left: 0; right: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px 14px;
+    align-items: center; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--line); font-size: 14px; }
+  #head h1 { font-size: 16px; margin: 0 8px 0 0; }
+  #head a { color: var(--accent); }
+  #head label { display: inline-flex; align-items: center; gap: 4px; }
+  #legend { position: absolute; left: 16px; bottom: 28px; z-index: 2; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 12px; font-size: 12px; line-height: 1.7; }
+  .sw { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid #fff; vertical-align: -2px; margin-right: 6px; box-shadow: 0 0 0 1px #0004; }
+  .sw.sq { border-radius: 2px; }
+  .maplibregl-popup-content { color: #222; font-size: 13px; line-height: 1.6; min-width: 220px; }
+  .maplibregl-popup-content b { font-size: 14px; }
+  .maplibregl-popup-content table { border-collapse: collapse; margin-top: 4px; }
+  .maplibregl-popup-content td { padding: 0 8px 0 0; white-space: nowrap; }
+  .maplibregl-popup-content .big { font-size: 22px; font-weight: 700; }
+  .maplibregl-ctrl-attrib { font-size: 11px; }
+</style>
+</head>
+<body>
+<div id="head">
+  <h1>石川・富山 河川水位</h1>
+  <span id="updated">読み込み中…</span>
+  <label><input type="checkbox" id="chkStg" checked> 水位計</label>
+  <label><input type="checkbox" id="chkSw" checked> 危機管理型</label>
+  <label><input type="checkbox" id="chkCity" checked> 富山市</label>
+  <label><input type="checkbox" id="chkTide" checked> 潮位</label>
+  <label><input type="checkbox" id="chkMissing"> 欠測も表示</label>
+  <select id="base">
+    <option value="gsi-pale">地理院 淡色</option>
+    <option value="gsi-std">地理院 標準</option>
+    <option value="gsi-photo">航空写真</option>
+    <option value="osm">OpenStreetMap</option>
+  </select>
+  <a id="dataLink" href="https://github.com/tomokyuuu/scraping/tree/main/data" target="_blank" rel="noopener">保存データ（GitHub）</a>
+  <a href="https://www.river.go.jp/" target="_blank" rel="noopener">出典: 川の防災情報</a>
+</div>
+<div id="map"></div>
+<div id="legend">
+  <div><span class="sw" style="background:#2e8b57"></span>平常</div>
+  <div><span class="sw" style="background:#f2c100"></span>水防団待機</div>
+  <div><span class="sw" style="background:#f28c00"></span>氾濫注意</div>
+  <div><span class="sw" style="background:#e03030"></span>避難判断</div>
+  <div><span class="sw" style="background:#8b008b"></span>氾濫危険・以上</div>
+  <div><span class="sw" style="background:#999"></span>欠測・基準なし</div>
+  <div><span class="sw sq" style="background:#2e8b57"></span>四角＝危機管理型</div>
+  <div><span class="sw" style="background:#1f77d0"></span>青＝富山市（基準なし）</div>
+  <div><span class="sw" style="background:#0aa; border-radius:0; transform:rotate(45deg); width:10px; height:10px"></span>菱形＝潮位（気象庁）</div>
+</div>
+<script>
+const TILES = {
+  "gsi-pale": ["https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png", "地図:国土地理院"],
+  "gsi-std": ["https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png", "地図:国土地理院"],
+  "gsi-photo": ["https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg", "地図:国土地理院"],
+  "osm": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png", "&copy; OpenStreetMap contributors"],
+};
+const LEVEL_COLOR = ["#2e8b57", "#f2c100", "#f28c00", "#e03030", "#8b008b", "#8b008b"];
+
+function style(key) {
+  const [url, attr] = TILES[key];
+  return { version: 8, sources: { base: { type: "raster", tiles: [url], tileSize: 256, attribution: attr, maxzoom: 18 } },
+           layers: [{ id: "base", type: "raster", source: "base" }] };
+}
+
+const map = new maplibregl.Map({ container: "map", style: style("gsi-pale"), center: [136.9, 36.75], zoom: 8.3 });
+map.addControl(new maplibregl.NavigationControl(), "top-right");
+map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true } }), "top-right");
+
+let data = null;
+const markers = [];
+
+// 水位と基準水位の比較で色レベルを決める（0=平常 1=待機 2=注意 3=避難判断 4=危険 5=氾濫）。
+// サイトの stg_ovlvl は欠測でも 30 が入るなど種別で意味が違うので使わない。
+function levelOf(p) {
+  if (p.stg == null || p.stg_ccd) return -1;
+  // 危機管理型: rsrv_stg=観測開始, dng_stg=氾濫危険, fld_stg=氾濫開始
+  const thr = p.kind === "swstg" ? [null, null, null, p.dng_stg, p.fld_stg]
+                                 : [p.rsrv_stg, p.warn_stg, p.spcl_warn_stg, p.dng_stg, p.fld_stg];
+  if (thr.every(t => t == null)) return p.kind === "swstg" ? 0 : -1;
+  let lv = 0;
+  thr.forEach((t, i) => { if (t != null && p.stg >= t) lv = i + 1; });
+  return lv;
+}
+
+function fmt(v) { return v == null ? "--" : v.toFixed(2); }
+
+function popupHtml(p) {
+  if (p.kind === "tide") {
+    return `<b>${p.obs_nm}</b> <small>潮位・${p.operator ?? ""}</small><br>
+      <span class="big">${p.tide_cm ?? "--"}</span> cm <small>${p.obs_time ?? ""}</small>
+      ${p.departure_cm != null ? `<div>偏差 ${p.departure_cm} cm</div>` : ""}
+      <div><small>基準: ${p.reference ?? ""}</small></div>
+      <div style="margin-top:6px"><a href="${p.url}" target="_blank" rel="noopener">気象庁で開く</a> ·
+      <a href="https://github.com/tomokyuuu/scraping/tree/main/data/jma_tide" target="_blank" rel="noopener">CSV</a></div>`;
+  }
+  if (p.kind === "city") {
+    return `<b>${p.obs_nm}</b> <small>富山市</small><br>
+      <span class="big">${fmt(p.stg)}</span> m <small>${p.obs_time ?? ""}</small>
+      ${p.diff != null ? `<div>前回比 ${p.diff} m</div>` : ""}
+      <div style="margin-top:6px"><a href="${p.url}" target="_blank" rel="noopener">富山市サイトで開く</a> ·
+      <a href="https://github.com/tomokyuuu/scraping/tree/main/data/toyama_city" target="_blank" rel="noopener">CSV</a></div>`;
+  }
+  const url = p.kind === "stg"
+    ? `https://www.river.go.jp/kawabou/pc/tm?zm=15&ofcCd=${p.obs_id.slice(0, 5) * 1}&itmkndCd=4&obsCd=${p.obs_id.slice(-5) * 1}`
+    : `https://k.river.go.jp/?zm=15`;
+  const thr = p.kind === "stg"
+    ? [["水防団待機", p.rsrv_stg], ["氾濫注意", p.warn_stg], ["避難判断", p.spcl_warn_stg], ["氾濫危険", p.dng_stg], ["計画高水位", p.fld_stg]]
+    : [["観測開始", p.rsrv_stg], ["氾濫危険", p.dng_stg], ["氾濫開始", p.fld_stg]];
+  const rows = thr.filter(([, v]) => v != null).map(([k, v]) => `<tr><td>${k}</td><td>${fmt(v)} m</td></tr>`).join("");
+  const miss = p.stg == null || p.stg_ccd ? `<div style="color:#c00">欠測 (code ${p.stg_ccd ?? "-"})</div>` : "";
+  return `<b>${p.obs_nm}</b> <small>${p.kind === "stg" ? "水位計" : "危機管理型"}</small><br>
+    <span class="big">${fmt(p.stg)}</span> m <small>${p.obs_time ?? ""}</small>${miss}
+    <table>${rows}</table>
+    <div style="margin-top:6px"><a href="${url}" target="_blank" rel="noopener">川の防災情報で開く</a> ·
+    <a href="https://github.com/tomokyuuu/scraping/tree/main/data/${p.pref}" target="_blank" rel="noopener">CSV</a></div>`;
+}
+
+function render() {
+  markers.forEach(m => m.remove());
+  markers.length = 0;
+  if (!data) return;
+  const show = { stg: chkStg.checked, swstg: chkSw.checked, city: chkCity.checked, tide: chkTide.checked };
+  const showMissing = chkMissing.checked;
+  let shown = 0;
+  for (const f of data.features) {
+    const p = f.properties;
+    if (!show[p.kind]) continue;
+    const lv = p.kind === "city" ? (p.stg == null ? -1 : 0)
+             : p.kind === "tide" ? (p.tide_cm == null ? -1 : 0) : levelOf(p);
+    if (lv < 0 && !showMissing) continue;
+    const el = document.createElement("div");
+    const size = lv >= 2 ? 18 : 12;
+    const color = lv < 0 ? "#999" : p.kind === "city" ? "#1f77d0" : p.kind === "tide" ? "#0aa" : LEVEL_COLOR[lv];
+    const shape = p.kind === "swstg" ? "border-radius:2px" : p.kind === "tide" ? "border-radius:0;transform:rotate(45deg)" : "border-radius:50%";
+    el.style.cssText = `width:${size}px;height:${size}px;border:1.5px solid #fff;box-shadow:0 0 0 1px #0005;cursor:pointer;` +
+      `background:${color};${shape}`;
+    el.title = p.kind === "tide" ? `${p.obs_nm} ${p.tide_cm ?? "--"} cm` : `${p.obs_nm} ${fmt(p.stg)} m`;
+    const m = new maplibregl.Marker({ element: el }).setLngLat(f.geometry.coordinates)
+      .setPopup(new maplibregl.Popup({ offset: 10, maxWidth: "320px" }).setHTML(popupHtml(p))).addTo(map);
+    markers.push(m);
+    shown++;
+  }
+  updated.textContent = `更新 ${data.updated}（${shown} / ${data.features.length} 地点）`;
+}
+
+async function load() {
+  try {
+    const t = Date.now();
+    const [a, b, c] = await Promise.all([
+      fetch("latest.geojson?t=" + t, { cache: "no-store" }).then(r => r.json()),
+      fetch("latest_toyama_city.geojson?t=" + t, { cache: "no-store" }).then(r => r.json()).catch(() => ({ features: [] })),
+      fetch("latest_jma_tide.geojson?t=" + t, { cache: "no-store" }).then(r => r.json()).catch(() => ({ features: [] })),
+    ]);
+    data = { updated: a.updated, features: [...a.features, ...b.features, ...c.features] };
+    if (a.data_url) dataLink.href = a.data_url;
+    render();
+  } catch (e) {
+    updated.textContent = "読み込み失敗: " + e;
+  }
+}
+
+[chkStg, chkSw, chkCity, chkTide, chkMissing].forEach(c => c.addEventListener("change", render));
+base.addEventListener("change", () => map.setStyle(style(base.value)));
+map.on("load", load);
+setInterval(load, 10 * 60 * 1000);
+</script>
+</body>
+</html>

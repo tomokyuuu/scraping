@@ -1,0 +1,3 @@
+__pycache__/
+# 日別 CSV は Drive に送る（Git には入れない）。観測所一覧 stations.csv だけ残す
+data/**/20*.csv

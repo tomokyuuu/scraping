@@ -1,0 +1,95 @@
+name: river level
+
+on:
+  schedule:
+    # 毎時: 最新値で地図を更新。氾濫注意水位以上の観測所があれば直近1週間の10分値を Drive に保存
+    - cron: "7 * * * *"
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "何日前から取るか（川の防災情報は約7日、富山市は約30日、潮位は約20日まで）"
+        default: "6"
+        required: true
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: river-level
+  cancel-in-progress: false
+
+env:
+  DRIVE_UPLOAD_URL: ${{ secrets.DRIVE_UPLOAD_URL }}
+  DRIVE_TOKEN: ${{ secrets.DRIVE_TOKEN }}
+  # 地図の「保存データ」リンク先（Drive のフォルダ URL）
+  DATA_URL: ${{ vars.DATA_URL || 'https://drive.google.com/drive/folders/1Hzr2jctAziRDwGx7jakB7aGb4kvA_D5W' }}
+  ALERT_FIELD: ${{ vars.ALERT_FIELD || 'warn_stg' }}
+
+defaults:
+  run:
+    working-directory: river-level
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 最新値で地図を更新
+        run: |
+          python fetch_river_level.py --days 0
+          python fetch_toyama_city.py --days 0
+          python fetch_jma_tide.py --days 0
+
+      - name: 取得するか決める
+        id: decide
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "days=${{ github.event.inputs.days }}" >> "$GITHUB_OUTPUT"
+          elif python check_alert.py; then
+            echo "days=6" >> "$GITHUB_OUTPUT"
+          else
+            echo "days=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 10分値を取得して Drive に保存
+        if: steps.decide.outputs.days != ''
+        run: |
+          D=${{ steps.decide.outputs.days }}
+          python fetch_river_level.py --days $D
+          python fetch_toyama_city.py --days $D
+          python fetch_jma_tide.py --days $D
+          python upload_drive.py
+
+      - name: 地図用の最新値をコミット
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/*.geojson data/stations.csv data/*/stations.csv
+          if git diff --cached --quiet; then
+            echo "no changes"
+          else
+            git commit -m "river-level latest: $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git pull --rebase origin main
+            git push
+          fi
+
+      - name: 地図ページを Pages 用にまとめる
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: river-level/docs
+
+  pages:
+    needs: fetch
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
