@@ -403,6 +403,21 @@ async function toggleFolder(el, path) {
   }
 }
 
+// 出水ごとの記録（events.json）。棚卸のとき Drive のどの日付がどの出水か分かるように
+function eventsHtml(events) {
+  if (!events || !events.length) return "<div><small>出水の記録はまだありません</small></div>";
+  const rows = [...events].reverse().map(e => {
+    const m = e.max_station;
+    return `<tr><td><small>${e.since}<br>〜 ${e.until ?? "<b style='color:#a00'>継続中</b>"}</small></td>
+      <td>${m ? `${m.obs_nm} <small>${m.pref === "ishikawa" ? "石川" : "富山"}</small><br><b>${(+m.max).toFixed(2)} m</b> <small>${m.lv_name}・${m.at}</small>` : "--"}</td>
+      <td style="text-align:right">${e.over_warn ?? 0}</td><td style="text-align:right">${e.flooded ?? 0}${e.flooded_names?.length ? `<br><small>${e.flooded_names.slice(0, 4).join("、")}${e.flooded_names.length > 4 ? "…" : ""}</small>` : ""}</td>
+      <td style="text-align:right">${e.cameras ?? 0} 台<br><small>${e.camera_images ?? 0} 枚</small></td>
+      <td><small>${e.trigger === "manual" ? "手動" : "自動"}</small></td></tr>`;
+  }).join("");
+  return `<table style="border-collapse:collapse;width:100%;margin-bottom:10px">
+    <tr style="color:var(--muted)"><td>期間</td><td>最大水位の観測所</td><td>氾濫注意以上</td><td>氾濫開始超え</td><td>カメラ</td><td></td></tr>${rows}</table>`;
+}
+
 btnEvents.onclick = async () => {
   openPanel("出水の記録", "<div>読み込み中…</div>");
   const ev = await getJson("events.json");
