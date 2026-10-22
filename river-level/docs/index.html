@@ -434,6 +434,30 @@ btnLedger.onclick = async () => {
   panelBody.innerHTML = desc + `<div class="tree">${treeHtml(r.tree, "")}</div>`;
 };
 
+// 取得期間中に基準水位を超えた地点の一覧（最大水位の高い段階から）
+btnPeak.onclick = () => {
+  const props = Object.fromEntries(data.features.map(f => [f.properties.obs_id, { ...f.properties, _coords: f.geometry.coordinates }]));
+  const rows = Object.entries(peak.peaks).filter(([, k]) => (k.lv ?? 0) >= 2)
+    .map(([id, k]) => ({ id, ...k, p: props[id] })).filter(r => r.p)
+    .sort((x, y) => y.lv - x.lv || y.at.localeCompare(x.at));
+  const html = rows.length ? `<table style="border-collapse:collapse;width:100%">
+    <tr style="color:var(--muted)"><td>段階</td><td>観測所</td><td>最大</td><td>時刻</td><td>現在</td></tr>` +
+    rows.map(r => `<tr style="cursor:pointer" onclick="flyTo('${r.id}')">
+      <td><span class="sw" style="background:${LV_COLOR[r.lv]}"></span>${LV_NAME[r.lv]}</td>
+      <td>${r.p.obs_nm} <small>${r.p.kind === "swstg" ? "危機管理型" : r.p.pref === "ishikawa" ? "石川" : "富山"}</small></td>
+      <td>${fmt(r.max)} m</td><td><small>${r.at}</small></td><td>${fmt(r.p.stg)} m</td></tr>`).join("") + "</table>"
+    : "<div>この期間に氾濫注意水位以上になった地点はありません</div>";
+  openPanel(`危なかった地点（${peak.period.from ?? "?"} 〜 ${peak.period.to ?? "?"}）`,
+    `<div style="margin-bottom:6px"><small>取得期間中の最大水位が氾濫注意水位以上の地点。行をクリックで地図を移動</small></div>${html}`);
+};
+function flyTo(id) {
+  const f = data.features.find(f => f.properties.obs_id === id);
+  if (!f) return;
+  map.flyTo({ center: f.geometry.coordinates, zoom: 13 });
+  const m = markers.find(m => { const ll = m.getLngLat(); return ll.lng === f.geometry.coordinates[0] && ll.lat === f.geometry.coordinates[1]; });
+  if (m) m.togglePopup();
+}
+
 // 凡例をドラッグで移動。位置はこのブラウザに記憶する
 (function () {
   const el = legend;
