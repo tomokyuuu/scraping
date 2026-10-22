@@ -97,6 +97,10 @@ def fetch_town(pref: str, twn: int, kind: str, date_path: str) -> list[dict]:
             ccd, ovlvl = p.get("stg_qmflg"), p.get("swstg_ovlvl")
         out.append({"pref": pref, "twn_cd": twn, "kind": kind, "obs_id": oid, "obs_nm": name,
                     "rvr_cd": rvr, "lat": p["lat"], "lon": p["lon"],
+                    # 川の防災情報の地点ページ用（危機管理型は itmkndCd=300）
+                    "ofc_cd": p.get("ofc_cd") if kind == "stg" else p.get("swofc_cd"),
+                    "itmknd_cd": 4 if kind == "stg" else 300,
+                    "obs_cd": p.get("obs_cd") if kind == "stg" else p.get("swobs_cd"),
                     "rsrv_stg": thr[0], "warn_stg": thr[1], "spcl_warn_stg": thr[2],
                     "dng_stg": thr[3], "fld_stg": thr[4],
                     "obs_time": p.get("obs_time"), "stg": p.get("stg"), "stg_ccd": ccd, "stg_ovlvl": ovlvl})

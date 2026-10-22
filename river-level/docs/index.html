@@ -143,9 +143,10 @@ function popupHtml(p) {
       ${p.diff != null ? `<div>前回比 ${p.diff} m</div>` : ""}
       <div style="margin-top:6px">${graphBtn} <a href="${p.url}" target="_blank" rel="noopener">富山市サイト</a></div>`;
   }
-  const url = p.kind === "stg"
-    ? `https://www.river.go.jp/kawabou/pc/tm?zm=15&ofcCd=${p.obs_id.slice(0, 5) * 1}&itmkndCd=4&obsCd=${p.obs_id.slice(-5) * 1}`
-    : `https://k.river.go.jp/?zm=15`;
+  // 川の防災情報の地点ページ。危機管理型は itmkndCd=300（旧 k.river.go.jp は閉鎖済み）
+  const [lon, lat] = p._coords ?? [];
+  const url = `https://www.river.go.jp/kawabou/pc/tm?zm=15&clat=${lat}&clon=${lon}&fld=0` +
+    `&ofcCd=${p.ofc_cd ?? ""}&itmkndCd=${p.itmknd_cd ?? (p.kind === "stg" ? 4 : 300)}&obsCd=${p.obs_cd ?? ""}`;
   const thr = p.kind === "stg"
     ? [["水防団待機", p.rsrv_stg], ["氾濫注意", p.warn_stg], ["避難判断", p.spcl_warn_stg], ["氾濫危険", p.dng_stg], ["計画高水位", p.fld_stg]]
     : [["観測開始", p.rsrv_stg], ["氾濫危険", p.dng_stg], ["氾濫開始", p.fld_stg]];
@@ -178,6 +179,7 @@ function render() {
     el.style.cssText = `width:${size}px;height:${size}px;border:1px solid #444;cursor:pointer;background:${color};${shape};` +
       (trig ? "box-shadow:0 0 0 3px #e03030;" : "box-shadow:0 0 0 1px #fff;");
     el.title = p.kind === "tide" ? `${p.obs_nm} ${p.tide_cm ?? "--"} cm` : `${p.obs_nm} ${fmt(p.stg)} m`;
+    p._coords = f.geometry.coordinates;
     const m = new maplibregl.Marker({ element: el }).setLngLat(f.geometry.coordinates)
       .setPopup(new maplibregl.Popup({ offset: 10, maxWidth: "320px" }).setHTML(popupHtml(p))).addTo(map);
     markers.push(m);
