@@ -63,6 +63,8 @@
   <label><input type="checkbox" id="chkTide" checked> 潮位</label>
   <label><input type="checkbox" id="chkMissing"> 欠測も表示</label>
   <label><input type="checkbox" id="chkTrig"> トリガー地点</label>
+  <label><input type="checkbox" id="chkPeak"> 期間最大で色分け</label>
+  <button id="btnPeak">危なかった地点</button>
   <select id="base">
     <option value="gsi-pale">地理院 淡色</option>
     <option value="gsi-std">地理院 標準</option>
@@ -80,6 +82,7 @@
   <div><span class="sw" style="background:#e03030"></span>氾濫危険水位 以上</div>
   <div><span class="sw" style="background:#8b008b"></span>氾濫開始・計画高水位 以上</div>
   <div><span class="sw" style="background:#bbb"></span>欠測</div>
+  <div id="legendPeak" style="display:none"><span class="sw" style="background:#f2c100"></span>（期間最大）氾濫注意 <span class="sw" style="background:#f28c00;margin-left:6px"></span>避難判断</div>
   <div><span class="sw ring"></span>取得のトリガーになった地点</div>
 </div>
 <div id="panel">
@@ -108,8 +111,10 @@ map.addControl(new maplibregl.NavigationControl(), "top-right");
 // 現在地ボタン。位置情報はボタンを押したときだけ求める（自動追跡しない）
 map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: false }), "top-right");
 
-let data = null, alert = { over: [] }, status = {};
+let data = null, alert = { over: [] }, status = {}, peak = { peaks: {}, period: {} };
 const markers = [];
+const LV_NAME = ["基準未満", "水防団待機", "氾濫注意", "避難判断", "氾濫危険", "氾濫開始/計画高水位"];
+const LV_COLOR = ["#fff", "#fff", "#f2c100", "#f28c00", "#e03030", "#8b008b"];
 const SRC_OF = { stg: p => p.pref, swstg: p => p.pref, city: () => "toyama_city", tide: () => "jma_tide" };
 
 // 0=平常 1=氾濫危険以上 2=氾濫開始・計画高水位以上 -1=欠測。色は氾濫危険から付ける
@@ -153,8 +158,10 @@ function popupHtml(p) {
   const rows = thr.filter(([, v]) => v != null).map(([k, v]) => `<tr><td>${k}</td><td>${fmt(v)} m</td></tr>`).join("");
   const miss = p.stg == null || p.stg_ccd ? `<div style="color:#c00">欠測 (code ${p.stg_ccd ?? "-"})</div>` : "";
   const trig = isTrigger(p) ? `<div style="color:#c00">▶ 取得のトリガー地点（氾濫注意水位以上）</div>` : "";
+  const pk = peak.peaks[p.obs_id];
+  const pkHtml = pk ? `<div>期間最大 <b>${fmt(pk.max)} m</b> <small>${pk.at}</small>${pk.lv != null ? ` <span style="color:${pk.lv >= 2 ? "#c00" : "#555"}">${LV_NAME[pk.lv]}</span>` : ""}</div>` : "";
   return `<b>${p.obs_nm}</b> <small>${p.kind === "stg" ? "水位計" : "危機管理型"}</small><br>
-    <span class="big">${fmt(p.stg)}</span> m <small>${p.obs_time ?? ""}</small>${miss}${trig}
+    <span class="big">${fmt(p.stg)}</span> m <small>${p.obs_time ?? ""}</small>${miss}${trig}${pkHtml}
     <table>${rows}</table>
     <div style="margin-top:6px">${graphBtn} <a href="${url}" target="_blank" rel="noopener">川の防災情報</a></div>`;
 }
@@ -164,17 +171,28 @@ function render() {
   markers.length = 0;
   if (!data) return;
   const show = { stg: chkStg.checked, swstg: chkSw.checked, city: chkCity.checked, tide: chkTide.checked };
-  const showMissing = chkMissing.checked, showTrig = chkTrig.checked;
+  const showMissing = chkMissing.checked, showTrig = chkTrig.checked, byPeak = chkPeak.checked;
+  legendPeak.style.display = byPeak ? "" : "none";
   let shown = 0;
   for (const f of data.features) {
     const p = f.properties;
     if (!show[p.kind]) continue;
-    const lv = levelOf(p);
-    if (lv < 0 && !showMissing) continue;
+    let lv = levelOf(p), color, size;
+    if (byPeak) {
+      // 取得期間中の最大水位で色分け（氾濫注意から色を付ける）
+      const pk = peak.peaks[p.obs_id];
+      const plv = pk && pk.lv != null ? pk.lv : (pk ? 0 : -1);
+      if (plv < 0 && !showMissing) continue;
+      color = plv < 0 ? "#bbb" : LV_COLOR[plv];
+      size = plv >= 2 ? 14 : 8;
+      lv = plv;
+    } else {
+      if (lv < 0 && !showMissing) continue;
+      color = lv < 0 ? "#bbb" : LEVEL_COLOR[lv];
+      size = lv >= 1 ? 14 : 8;
+    }
     const trig = showTrig && isTrigger(p);
     const el = document.createElement("div");
-    const size = lv >= 1 ? 14 : 8;
-    const color = lv < 0 ? "#bbb" : LEVEL_COLOR[lv];
     const shape = p.kind === "swstg" ? "border-radius:2px" : p.kind === "tide" ? "border-radius:0;transform:rotate(45deg)" : "border-radius:50%";
     el.style.cssText = `width:${size}px;height:${size}px;border:1px solid #444;cursor:pointer;background:${color};${shape};` +
       (trig ? "box-shadow:0 0 0 3px #e03030;" : "box-shadow:0 0 0 1px #fff;");
@@ -189,7 +207,7 @@ function render() {
   const st = document.getElementById("status");
   if (status.active) {
     st.className = "active";
-    st.textContent = `取得中 ${status.since ?? ""}〜（最終 ${status.last_fetch}、トリガー ${alert.over.length} 地点）`;
+    st.textContent = `全地点を取得中 ${status.since ?? ""}〜（最終 ${status.last_fetch}、トリガー ${alert.over.length} 地点）`;
   } else {
     st.className = "";
     st.textContent = status.last_fetch ? `待機中（最終取得 ${status.last_fetch}）` : "待機中（取得なし）";
@@ -201,13 +219,14 @@ async function getJson(name) {
 }
 
 async function load() {
-  const [a, b, c, al, st] = await Promise.all([
+  const [a, b, c, al, st, pk] = await Promise.all([
     getJson("latest.geojson"), getJson("latest_toyama_city.geojson"), getJson("latest_jma_tide.geojson"),
-    getJson("alert.json"), getJson("status.json")]);
+    getJson("alert.json"), getJson("status.json"), getJson("peak.json")]);
   if (!a) { updated.textContent = "読み込み失敗"; return; }
   data = { updated: a.updated, features: [...a.features, ...(b?.features ?? []), ...(c?.features ?? [])] };
   alert = al ?? { over: [] };
   status = st ?? {};
+  peak = pk ?? { peaks: {}, period: {} };
   if (a.data_url) dataLink.href = a.data_url;
   render();
 }
@@ -273,6 +292,30 @@ btnLedger.onclick = async () => {
   panelBody.innerHTML = desc + `<div class="tree">${treeHtml(r.tree)}</div>`;
 };
 
+// 取得期間中に基準水位を超えた地点の一覧（最大水位の高い段階から）
+btnPeak.onclick = () => {
+  const props = Object.fromEntries(data.features.map(f => [f.properties.obs_id, { ...f.properties, _coords: f.geometry.coordinates }]));
+  const rows = Object.entries(peak.peaks).filter(([, k]) => (k.lv ?? 0) >= 2)
+    .map(([id, k]) => ({ id, ...k, p: props[id] })).filter(r => r.p)
+    .sort((x, y) => y.lv - x.lv || y.at.localeCompare(x.at));
+  const html = rows.length ? `<table style="border-collapse:collapse;width:100%">
+    <tr style="color:var(--muted)"><td>段階</td><td>観測所</td><td>最大</td><td>時刻</td><td>現在</td></tr>` +
+    rows.map(r => `<tr style="cursor:pointer" onclick="flyTo('${r.id}')">
+      <td><span class="sw" style="background:${LV_COLOR[r.lv]}"></span>${LV_NAME[r.lv]}</td>
+      <td>${r.p.obs_nm} <small>${r.p.kind === "swstg" ? "危機管理型" : r.p.pref === "ishikawa" ? "石川" : "富山"}</small></td>
+      <td>${fmt(r.max)} m</td><td><small>${r.at}</small></td><td>${fmt(r.p.stg)} m</td></tr>`).join("") + "</table>"
+    : "<div>この期間に氾濫注意水位以上になった地点はありません</div>";
+  openPanel(`危なかった地点（${peak.period.from ?? "?"} 〜 ${peak.period.to ?? "?"}）`,
+    `<div style="margin-bottom:6px"><small>取得期間中の最大水位が氾濫注意水位以上の地点。行をクリックで地図を移動</small></div>${html}`);
+};
+function flyTo(id) {
+  const f = data.features.find(f => f.properties.obs_id === id);
+  if (!f) return;
+  map.flyTo({ center: f.geometry.coordinates, zoom: 13 });
+  const m = markers.find(m => { const ll = m.getLngLat(); return ll.lng === f.geometry.coordinates[0] && ll.lat === f.geometry.coordinates[1]; });
+  if (m) m.togglePopup();
+}
+
 // 凡例をドラッグで移動。位置はこのブラウザに記憶する
 (function () {
   const el = legend;
@@ -298,7 +341,7 @@ btnLedger.onclick = async () => {
   });
 })();
 
-[chkStg, chkSw, chkCity, chkTide, chkMissing, chkTrig].forEach(c => c.addEventListener("change", render));
+[chkStg, chkSw, chkCity, chkTide, chkMissing, chkTrig, chkPeak].forEach(c => c.addEventListener("change", render));
 base.addEventListener("change", () => map.setStyle(style(base.value)));
 map.on("load", load);
 setInterval(load, 10 * 60 * 1000);
