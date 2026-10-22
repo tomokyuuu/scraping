@@ -7,7 +7,8 @@
  * 3. プロジェクトの設定 → スクリプト プロパティ に次の2つを追加
  *      ROOT_FOLDER_ID : 1 のフォルダ ID
  *      UPLOAD_TOKEN   : 長いでたらめな文字列（GitHub の Secrets DRIVE_TOKEN と同じ値にする）
- *      VIEW_PASSWORD  : 地図ページで運用情報（取得状況・グラフ・データ台帳）を見るための合言葉
+ *      VIEW_PASSWORD  : 地図ページの合言葉
+ *      MAIL_TO        : 氾濫通知メールの宛先（省略時はこのスクリプトの所有者）
  * 4. デプロイ → 新しいデプロイ → 種類「ウェブアプリ」、実行ユーザー「自分」、アクセス「全員」→ デプロイ
  *    表示される URL（.../exec）を GitHub の Secrets DRIVE_UPLOAD_URL と docs/index.html の API_URL に入れる
  * 5. コードを直したら「デプロイを管理」→ 新しいバージョンで再デプロイ（URL は変わらない）。clasp なら deploy.ps1
@@ -26,6 +27,13 @@ function doPost(e) {
     var body = JSON.parse(e.postData.contents);
     if (!body.token || body.token !== props.getProperty("UPLOAD_TOKEN")) {
       return reply_({ ok: false, error: "bad token" });
+    }
+    if (body.mail) {
+      // 氾濫通知メール。宛先はスクリプトプロパティ MAIL_TO
+      var to = props.getProperty("MAIL_TO");
+      if (!to) return reply_({ ok: false, error: "MAIL_TO not set" });
+      MailApp.sendEmail({ to: to, subject: String(body.mail.subject || "river-level"), body: String(body.mail.body || "") });
+      return reply_({ ok: true, to: to });
     }
     var parts = String(body.path || "").split("/").filter(function (s) { return s && s !== ".."; });
     if (!parts.length) return reply_({ ok: false, error: "bad path" });
@@ -52,6 +60,17 @@ function doPost(e) {
   } catch (err) {
     return reply_({ ok: false, error: String(err) });
   }
+}
+
+/**
+ * メール送信の権限を承認するために、エディタから一度だけ手で実行する（▶ 実行）。
+ * 承認後は MAIL_TO 宛にテストメールが 1 通届く。
+ */
+function testMail() {
+  var to = PropertiesService.getScriptProperties().getProperty("MAIL_TO");
+  if (!to) throw new Error("スクリプトプロパティ MAIL_TO を先に設定してください");
+  MailApp.sendEmail({ to: to, subject: "【河川水位】テスト通知", body: "river-level の氾濫通知メールのテストです。本番では、観測所が新たに氾濫開始水位／計画高水位を超えたときだけ 1 通届きます。" });
+  Logger.log("sent to " + to);
 }
 
 function doGet(e) {

@@ -55,6 +55,9 @@ jobs:
           python fetch_toyama_city.py --days 0
           python fetch_jma_tide.py --days 0
 
+      - name: 氾濫開始水位を新たに超えた観測所があればメール
+        run: python notify.py
+
       - name: 取得するか決める
         id: decide
         run: |
