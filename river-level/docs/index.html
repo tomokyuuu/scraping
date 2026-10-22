@@ -412,7 +412,7 @@ btnEvents.onclick = async () => {
 btnLedger.onclick = async () => {
   openPanel("Drive台帳", "<div>Drive を読み込み中…</div>");
   let r;
-  try { r = await (await fetch(`${API_URL}?ls=&pw=${encodeURIComponent(pw)}`)).json(); } catch (e) { panelBody.textContent = "読み込み失敗: " + e; return; }
+  try { r = await (await fetch(`${API_URL}?ls=/&pw=${encodeURIComponent(pw)}`)).json(); } catch (e) { panelBody.textContent = "読み込み失敗: " + e; return; }
   if (!r.ok) { panelBody.textContent = "取得できません: " + r.error; return; }
   const desc = `<div style="margin-bottom:6px"><a href="${r.root}" target="_blank" rel="noopener">${r.tree.name}</a> を Drive で開く ·
     ishikawa / toyama = 川の防災情報（国交省）、toyama_city = 富山市、jma_tide = 気象庁潮位。日別 CSV（10分値）。series/ は地図のグラフ用、camera/ はカメラ画像。フォルダをクリックで開く</div>`;

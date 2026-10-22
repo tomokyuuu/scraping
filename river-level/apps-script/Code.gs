@@ -76,7 +76,7 @@ function testMail() {
 function doGet(e) {
   try {
     var p = (e && e.parameter) || {};
-    if (p.auth || p.tree || p.series) {
+    if (p.auth || p.tree || p.series || p.ls !== undefined) {
       // 合言葉（スクリプトプロパティ VIEW_PASSWORD）。運用情報は合言葉を知っている人だけに返す
       var want = PropertiesService.getScriptProperties().getProperty("VIEW_PASSWORD");
       if (!want || String(p.pw || "") !== want) return reply_({ ok: false, error: "bad password" });
@@ -84,7 +84,7 @@ function doGet(e) {
     if (p.auth) return reply_({ ok: true, root: root_().getUrl() });
     if (p.tree) return reply_({ ok: true, root: root_().getUrl(), tree: tree_(root_(), 0) });
     if (p.ls !== undefined) {
-      // 1階層だけ（データ台帳を段階的に開くため）。ls=ishikawa/2026 のようにパス指定。空ならルート
+      // 1階層だけ（データ台帳を段階的に開くため）。ls=ishikawa/2026 のようにパス指定。"/" ならルート
       var parts = String(p.ls || "").split("/").filter(function (s) { return s && s !== ".."; });
       var folder = subfolder_(root_(), parts, false);
       if (!folder) return reply_({ ok: false, error: "no folder " + p.ls });
