@@ -2,8 +2,8 @@
 
 石川県・富山県の河川水位（10分値）と潮位を、**大雨のときだけ**自動で取得して Google Drive に保存するプロジェクト。GitHub Actions で動く。
 
-- 地図（最新値）: https://tomokyuuu.github.io/scraping/
-- 保存先: Google Drive（Apps Script 経由）。地図の「保存データ」リンクから開ける
+- 地図: https://tomokyuuu.github.io/scraping/ （**合言葉が必要**。研究用の私的ページで、合言葉なしでは地図も出ない。防災目的の閲覧は公式の川の防災情報へ誘導する）
+- 保存先: Google Drive（Apps Script 経由）。合言葉を入れた地図の「保存先（Drive）」から開ける。Drive の URL はページのソースには含めない（Apps Script が合言葉と引き換えに返す）
 
 ## 考え方
 
@@ -80,7 +80,7 @@ Python 3.10 以上、追加ライブラリ不要。
 
 ## 初回設定
 
-1. **Drive**: 保存先フォルダを作る。[apps-script/Code.gs](apps-script/Code.gs) 冒頭の手順で Web App をデプロイし、スクリプトプロパティ `ROOT_FOLDER_ID` と `UPLOAD_TOKEN` を入れる
+1. **Drive**: 保存先フォルダを作る。[apps-script/Code.gs](apps-script/Code.gs) 冒頭の手順で Web App をデプロイし、スクリプトプロパティ `ROOT_FOLDER_ID`・`UPLOAD_TOKEN`・`VIEW_PASSWORD`（地図の合言葉）を入れる
 2. **GitHub Secrets**（Settings → Secrets and variables → Actions）: `DRIVE_UPLOAD_URL`（Web App の URL）, `DRIVE_TOKEN`（`UPLOAD_TOKEN` と同じ値）
 3. **GitHub Variables**: `DATA_URL` に Drive フォルダの URL（地図の「保存データ」リンク先）。任意で `ALERT_FIELD`
 4. Settings → Actions → General → Workflow permissions を **Read and write**

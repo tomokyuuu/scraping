@@ -7,6 +7,7 @@
  * 3. プロジェクトの設定 → スクリプト プロパティ に次の2つを追加
  *      ROOT_FOLDER_ID : 1 のフォルダ ID
  *      UPLOAD_TOKEN   : 長いでたらめな文字列（GitHub の Secrets DRIVE_TOKEN と同じ値にする）
+ *      VIEW_PASSWORD  : 地図ページで運用情報（取得状況・グラフ・データ台帳）を見るための合言葉
  * 4. デプロイ → 新しいデプロイ → 種類「ウェブアプリ」、実行ユーザー「自分」、アクセス「全員」→ デプロイ
  *    表示される URL（.../exec）を GitHub の Secrets DRIVE_UPLOAD_URL と docs/index.html の API_URL に入れる
  * 5. コードを直したら「デプロイを管理」→ 新しいバージョンで再デプロイ（URL は変わらない）。clasp なら deploy.ps1
@@ -14,9 +15,10 @@
  * POST（書き込み。トークン必須）: {token, path: "ishikawa/2026/2026-10-20.csv", content: "..."}
  *   path のフォルダは無ければ作る。同名ファイルがあれば中身を上書きする（ファイル ID は変わらない）。
  *   画像は {token, path: "camera/104353011/20261022_0925.jpg", content_b64: "..."}（同名があれば何もしない）
- * GET（読み取り。トークン不要。中身は公開データ）:
- *   ?tree=1                       フォルダ構成（データ台帳）
- *   ?series=<src>&id=<obs_id>     1観測所の時系列（series/<src>.json から切り出す）
+ * GET（読み取り。pw=合言葉 が必要）:
+ *   ?auth=1&pw=...                        合言葉の確認
+ *   ?tree=1&pw=...                        フォルダ構成（データ台帳）
+ *   ?series=<src>&id=<obs_id>&pw=...      1観測所の時系列（series/<src>.json から切り出す）
  */
 function doPost(e) {
   try {
@@ -55,6 +57,12 @@ function doPost(e) {
 function doGet(e) {
   try {
     var p = (e && e.parameter) || {};
+    if (p.auth || p.tree || p.series) {
+      // 合言葉（スクリプトプロパティ VIEW_PASSWORD）。運用情報は合言葉を知っている人だけに返す
+      var want = PropertiesService.getScriptProperties().getProperty("VIEW_PASSWORD");
+      if (!want || String(p.pw || "") !== want) return reply_({ ok: false, error: "bad password" });
+    }
+    if (p.auth) return reply_({ ok: true, root: root_().getUrl() });
     if (p.tree) return reply_({ ok: true, root: root_().getUrl(), tree: tree_(root_(), 0) });
     if (p.series) return reply_(series_(String(p.series), String(p.id || "")));
     return reply_({ ok: true, message: "river-level endpoint" });

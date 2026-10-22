@@ -32,8 +32,6 @@ env:
   TZ: Asia/Tokyo
   DRIVE_UPLOAD_URL: ${{ secrets.DRIVE_UPLOAD_URL }}
   DRIVE_TOKEN: ${{ secrets.DRIVE_TOKEN }}
-  # 地図の「保存データ」リンク先（Drive のフォルダ URL）
-  DATA_URL: ${{ vars.DATA_URL || 'https://drive.google.com/drive/folders/1Hzr2jctAziRDwGx7jakB7aGb4kvA_D5W' }}
   ALERT_FIELD: ${{ vars.ALERT_FIELD || 'warn_stg' }}
   CAM_FIELD: ${{ vars.CAM_FIELD || 'fld_stg' }}
   CAM_RADIUS_M: ${{ vars.CAM_RADIUS_M || '500' }}

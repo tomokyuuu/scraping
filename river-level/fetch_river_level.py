@@ -41,7 +41,6 @@ DAY_TIMES = ["0810", "1620", "2350"]
 ROOT = Path(__file__).parent
 DATA = ROOT / "data"
 GEOJSON = ROOT / "docs" / "latest.geojson"
-DATA_URL = os.environ.get("DATA_URL", "https://github.com/tomokyuuu/scraping/tree/main/data")
 
 STATION_FIELDS = ["pref", "twn_cd", "kind", "obs_id", "obs_nm", "rvr_cd", "lat", "lon",
                   "rsrv_stg", "warn_stg", "spcl_warn_stg", "dng_stg", "fld_stg"]
@@ -143,7 +142,7 @@ def write_geojson(stations: list[dict], crnt: str) -> None:
     feats = [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [s["lon"], s["lat"]]},
               "properties": {k: v for k, v in s.items() if k not in ("lat", "lon")}} for s in stations]
     GEOJSON.parent.mkdir(exist_ok=True)
-    GEOJSON.write_text(json.dumps({"type": "FeatureCollection", "updated": crnt, "data_url": DATA_URL,
+    GEOJSON.write_text(json.dumps({"type": "FeatureCollection", "updated": crnt,
                                    "features": feats}, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
 

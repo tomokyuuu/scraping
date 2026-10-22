@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
 <title>石川・富山 河川水位</title>
 <link rel="icon" href="icon.png">
 <link rel="apple-touch-icon" href="icon.png">
@@ -27,6 +28,14 @@
   #head button, #panel button { font: inherit; font-size: 13px; padding: 2px 10px; border: 1px solid var(--line); border-radius: 6px;
     background: var(--bg); color: var(--fg); cursor: pointer; }
   #status { padding: 2px 10px; border-radius: 12px; background: #e8e8e8; color: #333; font-size: 13px; }
+  /* 合言葉を入れるまでは地図も何も出さない（研究用の私的ページ。防災情報は公式サイトへ） */
+  #gate { position: fixed; inset: 0; z-index: 10; background: var(--bg); display: flex; align-items: center; justify-content: center; }
+  #gate .box { max-width: 360px; padding: 24px; border: 1px solid var(--line); border-radius: 12px; text-align: center; line-height: 1.8; }
+  #gate input { font: inherit; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; width: 180px; }
+  #gate button { font: inherit; padding: 6px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer; }
+  body.auth #gate { display: none; }
+  #head, #legend, #map { visibility: hidden; }
+  body.auth #head, body.auth #legend, body.auth #map { visibility: visible; }
   #status.active { background: #ffe0e0; color: #a00; font-weight: 600; }
   #legend { position: absolute; left: 16px; bottom: 28px; z-index: 2; background: var(--panel); border: 1px solid var(--line);
     border-radius: 8px; padding: 8px 12px; font-size: 12px; line-height: 1.7; cursor: move; user-select: none; touch-action: none; }
@@ -55,6 +64,15 @@
 </style>
 </head>
 <body>
+<div id="gate">
+  <div class="box">
+    <div style="font-size:18px;font-weight:600">石川・富山 河川水位（研究用）</div>
+    <div style="margin:8px 0 14px;color:var(--muted);font-size:13px">関係者向けの私的なページです。<br>河川の防災情報は公式サイト
+      <a href="https://www.river.go.jp/" style="color:var(--accent)">川の防災情報（国土交通省）</a> をご覧ください。</div>
+    <form id="gateForm"><input type="password" id="gatePw" placeholder="合言葉" autocomplete="current-password"> <button type="submit">開く</button></form>
+    <div id="gateMsg" style="color:#c00;font-size:13px;min-height:1.4em"></div>
+  </div>
+</div>
 <div id="head">
   <div class="row">
     <h1>石川・富山 河川水位</h1>
@@ -67,8 +85,9 @@
       <option value="osm">OpenStreetMap</option>
     </select>
     <button id="btnLedger">データ台帳</button>
-    <a id="dataLink" href="https://drive.google.com/drive/folders/1Hzr2jctAziRDwGx7jakB7aGb4kvA_D5W" target="_blank" rel="noopener">保存先（Drive）</a>
+    <a id="dataLink" href="#" target="_blank" rel="noopener">保存先（Drive）</a>
     <a href="https://www.river.go.jp/" target="_blank" rel="noopener">出典: 川の防災情報</a>
+    <button id="btnLogin" title="合言葉を忘れてログアウト">🔓</button>
   </div>
   <div class="row">
     <label><input type="checkbox" id="chkStg" checked> 水位計</label>
@@ -122,6 +141,26 @@ map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAc
 let data = null, alert = { over: [] }, status = {}, peak = { peaks: {}, period: {} };
 let cameras = null, camIndex = {};
 const markers = [], camMarkers = [];
+// 合言葉。Apps Script 側（スクリプトプロパティ VIEW_PASSWORD）で照合する。通ったらこのブラウザに記憶
+let pw = "", authed = false;
+try { pw = localStorage.getItem("viewPw") || ""; } catch (e) { /* 無視 */ }
+async function verify(p) {
+  try {
+    const r = await (await fetch(`${API_URL}?auth=1&pw=${encodeURIComponent(p)}`)).json();
+    if (!r.ok) return false;
+    authed = true; pw = p;
+    document.body.classList.add("auth");
+    if (r.root) dataLink.href = r.root;
+    try { localStorage.setItem("viewPw", p); } catch (e) { /* 無視 */ }
+    return true;
+  } catch (e) { return false; }
+}
+function logout() {
+  authed = false; pw = "";
+  document.body.classList.remove("auth");
+  dataLink.href = "#";
+  try { localStorage.removeItem("viewPw"); } catch (e) { /* 無視 */ }
+}
 const LV_NAME = ["基準未満", "水防団待機", "氾濫注意", "避難判断", "氾濫危険", "氾濫開始/計画高水位"];
 const LV_COLOR = ["#fff", "#fff", "#f2c100", "#f28c00", "#e03030", "#8b008b"];
 const SRC_OF = { stg: p => p.pref, swstg: p => p.pref, city: () => "toyama_city", tide: () => "jma_tide" };
@@ -142,7 +181,7 @@ function isTrigger(p) { return alert.over.some(o => o.obs_id === p.obs_id && o.k
 
 function popupHtml(p) {
   const src = SRC_OF[p.kind](p);
-  const graphBtn = status.active || status.last_fetch
+  const graphBtn = !authed ? "" : status.active || status.last_fetch
     ? `<button onclick="showChart('${src}','${p.obs_id}')">グラフ（保存中データ）</button>` : `<small>保存中のデータなし</small>`;
   if (p.kind === "tide") {
     return `<b>${p.obs_nm}</b> <small>潮位・${p.operator ?? ""}</small><br>
@@ -166,8 +205,8 @@ function popupHtml(p) {
     : [["観測開始", p.rsrv_stg], ["氾濫危険", p.dng_stg], ["氾濫開始", p.fld_stg]];
   const rows = thr.filter(([, v]) => v != null).map(([k, v]) => `<tr><td>${k}</td><td>${fmt(v)} m</td></tr>`).join("");
   const miss = p.stg == null || p.stg_ccd ? `<div style="color:#c00">欠測 (code ${p.stg_ccd ?? "-"})</div>` : "";
-  const trig = isTrigger(p) ? `<div style="color:#c00">▶ 取得のトリガー地点（氾濫注意水位以上）</div>` : "";
-  const pk = peak.peaks[p.obs_id];
+  const trig = authed && isTrigger(p) ? `<div style="color:#c00">▶ 取得のトリガー地点（氾濫注意水位以上）</div>` : "";
+  const pk = authed ? peak.peaks[p.obs_id] : null;
   const pkHtml = pk ? `<div>期間最大 <b>${fmt(pk.max)} m</b> <small>${pk.at}</small>${pk.lv != null ? ` <span style="color:${pk.lv >= 2 ? "#c00" : "#555"}">${LV_NAME[pk.lv]}</span>` : ""}</div>` : "";
   return `<b>${p.obs_nm}</b> <small>${p.kind === "stg" ? "水位計" : "危機管理型"}</small><br>
     <span class="big">${fmt(p.stg)}</span> m <small>${p.obs_time ?? ""}</small>${miss}${trig}${pkHtml}
@@ -226,9 +265,8 @@ function render() {
 
 // 河川カメラ（簡易型河川監視カメラ・CCTV）。撮るのは氾濫開始水位以上の観測所の近くだけ
 function camPopup(p) {
-  const ix = camIndex[p.scam_id] ?? {};
-  const shots = ix.shots ?? [];
-  const saved = ix.count ? `<div>保存 ${ix.count} 枚（最新 ${ix.last_time ?? ""}）
+  const ix = authed ? (camIndex[p.scam_id] ?? {}) : {};
+  const saved = !authed ? "" : ix.count ? `<div>保存 ${ix.count} 枚（最新 ${ix.last_time ?? ""}）
     <a href="${dataLink.href}" target="_blank" rel="noopener">Drive の camera/${p.scam_id}/</a></div>` : `<div><small>保存画像なし</small></div>`;
   const near = ix.stations ? `<div><small>対象観測所: ${ix.stations.map(s => `${s.obs_nm}(${s.dist_m}m)`).join("、")}</small></div>` : "";
   return `<b>📷 ${p.name}</b> <small>${p.kind === "scam" ? "簡易型河川監視カメラ" : "CCTV"}</small>
@@ -243,7 +281,7 @@ function renderCameras() {
   for (const f of cameras.features) {
     const p = f.properties;
     const el = document.createElement("div");
-    const saved = (camIndex[p.scam_id]?.count ?? 0) > 0;
+    const saved = authed && (camIndex[p.scam_id]?.count ?? 0) > 0;
     el.style.cssText = `width:10px;height:10px;border:1px solid #333;background:${saved ? "#ff8c00" : "#6cf"};cursor:pointer;` +
       `clip-path:polygon(0 25%,30% 25%,40% 0,60% 0,70% 25%,100% 25%,100% 100%,0 100%)`;
     el.title = `📷 ${p.name}`;
@@ -268,9 +306,18 @@ async function load() {
   peak = pk ?? { peaks: {}, period: {} };
   cameras = cm;
   camIndex = ci ?? {};
-  if (a.data_url) dataLink.href = a.data_url;
   render();
 }
+
+// 合言葉の入口。通ったら地図を読み込む。記憶があれば自動で通す
+gateForm.onsubmit = async e => {
+  e.preventDefault();
+  gateMsg.textContent = "確認中…";
+  if (await verify(gatePw.value)) { gateMsg.textContent = ""; load(); map.resize(); }
+  else gateMsg.textContent = "合言葉が違います";
+};
+btnLogin.onclick = () => { if (confirm("この端末の合言葉を忘れてログアウトしますか？")) { logout(); location.reload(); } };
+if (pw) verify(pw).then(ok => { if (ok) { load(); map.resize(); } else logout(); });
 
 // ---- パネル（グラフ / データ台帳）----
 const panel = document.getElementById("panel"), panelTitle = document.getElementById("panelTitle"), panelBody = document.getElementById("panelBody");
@@ -281,7 +328,7 @@ panelClose.onclick = () => { panel.classList.remove("show"); if (chart) { chart.
 async function showChart(src, id) {
   openPanel("時系列", "<div>Drive から読み込み中…（数秒かかります）</div>");
   let r;
-  try { r = await (await fetch(`${API_URL}?series=${src}&id=${encodeURIComponent(id)}`)).json(); }
+  try { r = await (await fetch(`${API_URL}?series=${src}&id=${encodeURIComponent(id)}&pw=${encodeURIComponent(pw)}`)).json(); }
   catch (e) { panelBody.textContent = "読み込み失敗: " + e; return; }
   if (!r.ok) { panelBody.textContent = "取得できません: " + r.error; return; }
   const p = data.features.map(f => f.properties).find(q => q.obs_id === id) ?? {};
@@ -326,7 +373,7 @@ function treeHtml(node) {
 btnLedger.onclick = async () => {
   openPanel("データ台帳（Drive）", "<div>Drive を読み込み中…</div>");
   let r;
-  try { r = await (await fetch(`${API_URL}?tree=1`)).json(); } catch (e) { panelBody.textContent = "読み込み失敗: " + e; return; }
+  try { r = await (await fetch(`${API_URL}?tree=1&pw=${encodeURIComponent(pw)}`)).json(); } catch (e) { panelBody.textContent = "読み込み失敗: " + e; return; }
   if (!r.ok) { panelBody.textContent = "取得できません: " + r.error; return; }
   const desc = `<div style="margin-bottom:6px"><a href="${r.root}" target="_blank" rel="noopener">${r.tree.name}</a> を Drive で開く ·
     ishikawa / toyama = 川の防災情報（国交省）、toyama_city = 富山市、jma_tide = 気象庁潮位。日別 CSV（10分値）。series/ は地図のグラフ用</div>`;
@@ -385,8 +432,7 @@ function flyTo(id) {
 [chkStg, chkSw, chkCity, chkTide, chkMissing, chkTrig, chkPeak].forEach(c => c.addEventListener("change", render));
 chkCam.addEventListener("change", renderCameras);
 base.addEventListener("change", () => map.setStyle(style(base.value)));
-map.on("load", load);
-setInterval(load, 10 * 60 * 1000);
+setInterval(() => { if (authed) load(); }, 10 * 60 * 1000);
 </script>
 </body>
 </html>
