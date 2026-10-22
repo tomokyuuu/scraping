@@ -382,14 +382,31 @@ function treeHtml(node) {
   return `<ul>${folders}${files}</ul>`;
 }
 
+// 出水ごとの記録（events.json）。棚卸のとき Drive のどの日付がどの出水か分かるように
+function eventsHtml(events) {
+  if (!events || !events.length) return "<div><small>出水の記録はまだありません</small></div>";
+  const rows = [...events].reverse().map(e => {
+    const m = e.max_station;
+    return `<tr><td><small>${e.since}<br>〜 ${e.until ?? "<b style='color:#a00'>継続中</b>"}</small></td>
+      <td>${m ? `${m.obs_nm} <small>${m.pref === "ishikawa" ? "石川" : "富山"}</small><br><b>${(+m.max).toFixed(2)} m</b> <small>${m.lv_name}・${m.at}</small>` : "--"}</td>
+      <td style="text-align:right">${e.over_warn ?? 0}</td><td style="text-align:right">${e.flooded ?? 0}${e.flooded_names?.length ? `<br><small>${e.flooded_names.slice(0, 4).join("、")}${e.flooded_names.length > 4 ? "…" : ""}</small>` : ""}</td>
+      <td style="text-align:right">${e.cameras ?? 0} 台<br><small>${e.camera_images ?? 0} 枚</small></td>
+      <td><small>${e.trigger === "manual" ? "手動" : "自動"}</small></td></tr>`;
+  }).join("");
+  return `<table style="border-collapse:collapse;width:100%;margin-bottom:10px">
+    <tr style="color:var(--muted)"><td>期間</td><td>最大水位の観測所</td><td>氾濫注意以上</td><td>氾濫開始超え</td><td>カメラ</td><td></td></tr>${rows}</table>`;
+}
+
 btnLedger.onclick = async () => {
-  openPanel("データ台帳（Drive）", "<div>Drive を読み込み中…</div>");
+  openPanel("データ台帳", "<div>読み込み中…</div>");
   let r;
+  const ev = await getJson("events.json");
   try { r = await (await fetch(`${API_URL}?tree=1&pw=${encodeURIComponent(pw)}`)).json(); } catch (e) { panelBody.textContent = "読み込み失敗: " + e; return; }
   if (!r.ok) { panelBody.textContent = "取得できません: " + r.error; return; }
-  const desc = `<div style="margin-bottom:6px"><a href="${r.root}" target="_blank" rel="noopener">${r.tree.name}</a> を Drive で開く ·
-    ishikawa / toyama = 川の防災情報（国交省）、toyama_city = 富山市、jma_tide = 気象庁潮位。日別 CSV（10分値）。series/ は地図のグラフ用</div>`;
-  panelBody.innerHTML = desc + `<div class="tree">${treeHtml(r.tree)}</div>`;
+  const desc = `<div style="margin:8px 0 6px;font-weight:600">Drive の中身</div>
+    <div style="margin-bottom:6px"><a href="${r.root}" target="_blank" rel="noopener">${r.tree.name}</a> を Drive で開く ·
+    ishikawa / toyama = 川の防災情報（国交省）、toyama_city = 富山市、jma_tide = 気象庁潮位。日別 CSV（10分値）。series/ は地図のグラフ用、camera/ はカメラ画像</div>`;
+  panelBody.innerHTML = `<div style="font-weight:600;margin-bottom:4px">出水の記録</div>` + eventsHtml(ev) + desc + `<div class="tree">${treeHtml(r.tree)}</div>`;
 };
 
 // 取得期間中に基準水位を超えた地点の一覧（最大水位の高い段階から）
