@@ -35,6 +35,7 @@ env:
   ALERT_FIELD: ${{ vars.ALERT_FIELD || 'warn_stg' }}
   CAM_FIELD: ${{ vars.CAM_FIELD || 'fld_stg' }}
   CAM_RADIUS_M: ${{ vars.CAM_RADIUS_M || '500' }}
+  CAM_SAME_RIVER: ${{ vars.CAM_SAME_RIVER || '1' }}
 
 defaults:
   run:

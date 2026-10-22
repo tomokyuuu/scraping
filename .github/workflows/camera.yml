@@ -1,0 +1,52 @@
+name: river camera
+
+on:
+  schedule:
+    # 10分おき。氾濫開始水位以上の観測所が無ければ数秒で終わる（画像の更新間隔に合わせる）
+    - cron: "2,12,22,32,42,52 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: river-level
+  cancel-in-progress: false
+
+env:
+  TZ: Asia/Tokyo
+  DRIVE_UPLOAD_URL: ${{ secrets.DRIVE_UPLOAD_URL }}
+  DRIVE_TOKEN: ${{ secrets.DRIVE_TOKEN }}
+  CAM_FIELD: ${{ vars.CAM_FIELD || 'fld_stg' }}
+  CAM_RADIUS_M: ${{ vars.CAM_RADIUS_M || '500' }}
+  CAM_SAME_RIVER: ${{ vars.CAM_SAME_RIVER || '1' }}
+
+defaults:
+  run:
+    working-directory: river-level
+
+jobs:
+  camera:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 最新値を取ってカメラ画像を保存
+        run: |
+          python fetch_river_level.py --days 0
+          python fetch_camera.py
+          if ls data/camera/*/*.jpg >/dev/null 2>&1; then python upload_drive.py; fi
+      - name: 撮影記録をコミット
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/camera_index.json
+          if git diff --cached --quiet; then
+            echo "no changes"
+          else
+            git commit -m "river-level camera: $(date +'%Y-%m-%d %H:%M JST')"
+            git pull --rebase -X theirs origin main
+            git push
+          fi

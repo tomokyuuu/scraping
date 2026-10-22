@@ -3,6 +3,8 @@
 無差別には撮らない。対象は docs/latest.geojson で **氾濫開始水位／計画高水位（fld_stg）以上** になっている観測所
 （通常の水位計・危機管理型とも。氾濫注意・氾濫危険程度では撮らない）から CAM_RADIUS_M（既定 500 m）以内にあるカメラ。
 1観測所につき近い順に最大 2 台。基準は環境変数 CAM_FIELD で変えられる（fld_stg / dng_stg / spcl_warn_stg / warn_stg）。
+同じ河川コードのカメラ全部も対象に加える（既定。CAM_SAME_RIVER=0 で近くの2台だけにする）。
+data/camera_check.json（目視確認の結果）で「取得不可・メンテ・海岸・川が見えない」とされたカメラは候補から外す。
 
 カメラ一覧（座標・URL）は data/cameras.csv に置く（無ければ作る。--build で作り直す）。
   一覧  : /kawabou/file/files/obslist/obs/twnlist/{twnCd}.json の scam / cctv
@@ -12,6 +14,7 @@
 出力:
   data/camera/{scamId}/{YYYYMMDD_HHMM}.jpg   画像（同じ get_time のものは撮り直さない）
   docs/camera_index.json                     どのカメラを何枚撮ったか（地図のポップアップ用）
+  docs/station_cameras.json                  観測所 → 近くのカメラ の対応表（--build で作り直し。地図にも使う）
 """
 from __future__ import annotations
 
@@ -109,6 +112,50 @@ def dist_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return math.hypot((lat2 - lat1) * 111_000, (lon2 - lon1) * 111_000 * k)
 
 
+def camera_status() -> tuple[dict[str, str], set[str]]:
+    """data/camera_check.json（目視確認の結果）。戻り値は (カメラID→状態, 候補から外す状態の集合)。"""
+    path = DATA / "camera_check.json"
+    if not path.exists():
+        return {}, set()
+    d = json.loads(path.read_text(encoding="utf-8"))
+    return d.get("status", {}), set(d.get("exclude", []))
+
+
+def build_mapping(cams: list[dict]) -> dict[str, dict]:
+    """観測所 → カメラ の対応表を docs/station_cameras.json に書く。
+      near : RADIUS 以内で近い順に MAX_PER_STATION 台（取得不可・海岸などは除く）
+      river: 同じ河川コードのカメラ全部（CAM_SAME_RIVER=1 のときだけ取得対象に加える）
+    地図のポップアップ（近くのカメラ／なし）と、増水時のカメラ取得に使う。"""
+    geo = json.loads((DOCS / "latest.geojson").read_text(encoding="utf-8"))
+    status, exclude = camera_status()
+    usable = [c for c in cams if status.get(str(c["scam_id"])) not in exclude]
+    mapping: dict[str, dict] = {}
+    for f in geo["features"]:
+        p = f["properties"]
+        lon, lat = f["geometry"]["coordinates"]
+        near = sorted(((dist_m(lat, lon, c["lat"], c["lon"]), c) for c in usable), key=lambda x: x[0])
+        pack = lambda c, d: {"scam_id": str(c["scam_id"]), "name": c["name"], "kind": c["kind"],  # noqa: E731
+                             "dist_m": round(d), "img_url": c["img_url"], "status": status.get(str(c["scam_id"]), "ok")}
+        river = [pack(c, dist_m(lat, lon, c["lat"], c["lon"])) for c in usable
+                 if p.get("rvr_cd") and str(c.get("rvr_cd") or "") == str(p["rvr_cd"])]
+        mapping[p["obs_id"]] = {"near": [pack(c, d) for d, c in near[:MAX_PER_STATION] if d <= RADIUS],
+                                "river": sorted(river, key=lambda x: x["dist_m"])}
+    (DOCS / "station_cameras.json").write_text(json.dumps(mapping, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    n = sum(1 for v in mapping.values() if v["near"])
+    print(f"station->camera: {n} / {len(mapping)} stations have a usable camera within {RADIUS:.0f} m "
+          f"({len(cams) - len(usable)} cameras excluded by check)")
+    return mapping
+
+
+def load_mapping(cams: list[dict]) -> dict[str, dict]:
+    path = DOCS / "station_cameras.json"
+    if path.exists():
+        m = json.loads(path.read_text(encoding="utf-8"))
+        if m and isinstance(next(iter(m.values())), dict):
+            return m
+    return build_mapping(cams)
+
+
 def target_stations() -> list[dict]:
     geo = json.loads((DOCS / "latest.geojson").read_text(encoding="utf-8"))
     out = []
@@ -122,14 +169,20 @@ def target_stations() -> list[dict]:
 
 def main(build: bool) -> None:
     cams = build_cameras() if build else load_cameras()
+    mapping = build_mapping(cams) if build else load_mapping(cams)
+    by_id = {str(c["scam_id"]): c for c in cams}
     stations = target_stations()
     picked: dict[str, dict] = {}
+    same_river = os.environ.get("CAM_SAME_RIVER", "1") == "1"
     for s in stations:
-        near = sorted(((dist_m(s["lat"], s["lon"], c["lat"], c["lon"]), c) for c in cams), key=lambda x: x[0])
-        for d, c in near[:MAX_PER_STATION]:
-            if d <= RADIUS:
-                e = picked.setdefault(str(c["scam_id"]), {**c, "stations": []})
-                e["stations"].append({"obs_id": s["obs_id"], "obs_nm": s["obs_nm"], "dist_m": round(d)})
+        entry = mapping.get(s["obs_id"], {"near": [], "river": []})
+        targets = entry["near"] + (entry["river"] if same_river else [])
+        for m in targets:
+            c = by_id.get(m["scam_id"])
+            if not c:
+                continue
+            e = picked.setdefault(m["scam_id"], {**c, "stations": []})
+            e["stations"].append({"obs_id": s["obs_id"], "obs_nm": s["obs_nm"], "dist_m": m["dist_m"]})
     print(f"camera: {len(stations)} target stations -> {len(picked)} cameras")
 
     index = json.loads(INDEX.read_text(encoding="utf-8")) if INDEX.exists() else {}

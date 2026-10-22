@@ -46,8 +46,10 @@
 
 ## カメラ画像の保存（fetch_camera.py）
 
-無差別には撮らない。**氾濫開始水位／計画高水位以上**になった観測所（通常・危機管理型とも）から 500 m 以内のカメラ（最大2台）だけ、取得中の毎時に1枚、Drive の `camera/{カメラID}/{撮影時刻}.jpg` に保存する。基準は Variables `CAM_FIELD`（`fld_stg` 既定 / `dng_stg` / `spcl_warn_stg` / `warn_stg`）、半径は `CAM_RADIUS_M`。
-カメラ一覧は `data/cameras.csv`（`python fetch_camera.py --build` で作り直し）。
+無差別には撮らない。**氾濫開始水位／計画高水位以上**になった観測所（通常・危機管理型とも）について、500 m 以内のカメラ（最大2台）＋**同じ川のカメラ全部**を、**10分おき**（`.github/workflows/camera.yml`）に Drive の `camera/{カメラID}/{撮影時刻}.jpg` に保存する。氾濫していなければ数秒で終わる。
+基準は Variables `CAM_FIELD`（`fld_stg` 既定 / `dng_stg` / `spcl_warn_stg` / `warn_stg`）、半径は `CAM_RADIUS_M`、同じ川を含めるかは `CAM_SAME_RIVER`（既定 1）。
+カメラ一覧は `data/cameras.csv`（`python fetch_camera.py --build` で作り直し）。観測所→カメラの対応表は `docs/station_cameras.json`（near=近く、river=同じ川）。
+`data/camera_check.json` は 2026-10-22 に全カメラを目視確認した結果で、取得不可（28台）・真っ白/真っ黒・メンテ中・海岸・川が見えない（計37台）は候補から外す。曇り・葉で遮られる（8台）は残す。
 
 ## ファイル
 

@@ -137,7 +137,18 @@ map.addControl(new maplibregl.NavigationControl(), "top-right");
 map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: false }), "top-right");
 
 let data = null, alert = { over: [] }, status = {}, peak = { peaks: {}, period: {} };
-let cameras = null, camIndex = {};
+let cameras = null, camIndex = {}, stationCams = {};
+// 観測所の近く（500 m 以内）のカメラ。無ければ「なし」と出す
+const CAM_STATUS = { fog: "曇り", leaves: "葉で遮られる" };
+function nearCamsHtml(p) {
+  const e = stationCams[p.obs_id];
+  if (e == null) return "";
+  const list = e.near ?? [];
+  const riverN = (e.river ?? []).length;
+  const extra = riverN > list.length ? `<small>（同じ川に計 ${riverN} 台）</small>` : "";
+  if (!list.length) return `<div><small>📷 近くにカメラなし</small>${extra}</div>`;
+  return `<div><small>📷 ${list.map(c => `<a href="${c.img_url}" target="_blank" rel="noopener">${c.name}</a>（${c.dist_m} m${CAM_STATUS[c.status] ? "・" + CAM_STATUS[c.status] : ""}）`).join("、")}</small>${extra}</div>`;
+}
 const markers = [], camMarkers = [];
 // 合言葉。Apps Script 側（スクリプトプロパティ VIEW_PASSWORD）で照合する。通ったらこのブラウザに記憶
 let pw = "", authed = false;
@@ -208,7 +219,7 @@ function popupHtml(p) {
   const pk = authed ? peak.peaks[p.obs_id] : null;
   const pkHtml = pk ? `<div>期間最大 <b>${fmt(pk.max)} m</b> <small>${pk.at}</small>${pk.lv != null ? ` <span style="color:${pk.lv >= 2 ? "#c00" : "#555"}">${LV_NAME[pk.lv]}</span>` : ""}</div>` : "";
   return `<b>${p.obs_nm}</b> <small>${p.kind === "stg" ? "水位計" : "危機管理型"}</small><br>
-    <span class="big">${fmt(p.stg)}</span> m <small>${p.obs_time ?? ""}</small>${miss}${trig}${pkHtml}
+    <span class="big">${fmt(p.stg)}</span> m <small>${p.obs_time ?? ""}</small>${miss}${trig}${pkHtml}${nearCamsHtml(p)}
     <table>${rows}</table>
     <div style="margin-top:6px">${graphBtn} <a href="${url}" target="_blank" rel="noopener">川の防災情報</a></div>`;
 }
@@ -295,9 +306,11 @@ async function getJson(name) {
 }
 
 async function load() {
-  const [a, b, c, al, st, pk, cm, ci] = await Promise.all([
+  const [a, b, c, al, st, pk, cm, ci, sc] = await Promise.all([
     getJson("latest.geojson"), getJson("latest_toyama_city.geojson"), getJson("latest_jma_tide.geojson"),
-    getJson("alert.json"), getJson("status.json"), getJson("peak.json"), getJson("cameras.geojson"), getJson("camera_index.json")]);
+    getJson("alert.json"), getJson("status.json"), getJson("peak.json"), getJson("cameras.geojson"), getJson("camera_index.json"),
+    getJson("station_cameras.json")]);
+  stationCams = sc ?? {};
   if (!a) { updated.textContent = "読み込み失敗"; return; }
   data = { updated: a.updated, features: [...a.features, ...(b?.features ?? []), ...(c?.features ?? [])] };
   alert = al ?? { over: [] };
