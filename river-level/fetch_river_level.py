@@ -36,8 +36,10 @@ from series import write_series
 BASE = "https://www.river.go.jp/kawabou/file"
 UA = "Mozilla/5.0 (river-level logger; github actions)"
 PREFS = {"1701": "ishikawa", "1601": "toyama"}
-# 1日を 8時間20分 の窓3つで覆う時刻
+# 1日を 8時間20分 の窓3つで覆う時刻（通常の水位計: 10分値50個）
 DAY_TIMES = ["0810", "1620", "2350"]
+# 危機管理型は「最新50点」で、増水中は数分おきに送るので窓が短い。4時間おきに取る
+SW_TIMES = ["0400", "0810", "1200", "1620", "2000", "2350"]
 ROOT = Path(__file__).parent
 DATA = ROOT / "data"
 GEOJSON = ROOT / "docs" / "latest.geojson"
@@ -154,13 +156,11 @@ def main(days_back: int) -> None:
     print(f"current obs time: {crnt}, days: {days[0]}..{days[-1]}")
 
     # 取りに行く時刻: 過去日は3回、今日は now までの窓 + now
-    paths: list[str] = []
-    for d in days:
-        ymd = d.replace("-", "")
-        for t in DAY_TIMES:
-            if ymd + t < now.strftime("%Y%m%d%H%M"):
-                paths.append(f"{ymd}/{t}")
-    paths.append(now_path)
+    def windows(times: list[str]) -> list[str]:
+        out = [f"{d.replace('-', '')}/{t}" for d in days for t in times
+               if d.replace("-", "") + t < now.strftime("%Y%m%d%H%M")]
+        return out + [now_path]
+    paths, sw_paths = windows(DAY_TIMES), windows(SW_TIMES)
 
     all_stations: list[dict] = []
     for pref_cd, pref in PREFS.items():
@@ -172,9 +172,9 @@ def main(days_back: int) -> None:
             if t.get("swExistFlg"):
                 stations += fetch_town(pref, t["twnCd"], "swstg", now_path)
 
-        # 通常水位計は窓ごと、危機管理型は1週間ぶんが1回で返るので now だけ。--days 0 は地図更新のみ
+        # --days 0 は地図更新のみ
         jobs = [] if days_back == 0 else \
-            [(s, p) for s in stations for p in (paths if s["kind"] == "stg" else [now_path])]
+            [(s, p) for s in stations for p in (paths if s["kind"] == "stg" else sw_paths)]
         rows: list[dict] = []
         with ThreadPoolExecutor(max_workers=8) as ex:
             for r in ex.map(lambda j: fetch_min10(*j), jobs):
