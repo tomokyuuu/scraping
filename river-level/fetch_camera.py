@@ -21,6 +21,7 @@ from __future__ import annotations
 import csv
 import json
 import math
+import re
 import os
 import sys
 import time
@@ -112,6 +113,12 @@ def dist_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return math.hypot((lat2 - lat1) * 111_000, (lon2 - lon1) * 111_000 * k)
 
 
+def river_name(s: str) -> str:
+    """名前から川の名前を取り出す（例: "親司川 広上"→"親司川", "羽咋土木　子浦川　吉野屋橋"→"子浦川", "日用川（ほうえい橋）"→"日用川"）。"""
+    m = re.findall(r"[^\s　（()]+?(?:川|潟|湖|放水路|承水路)", s)
+    return m[0] if m else ""
+
+
 def camera_status() -> tuple[dict[str, str], set[str]]:
     """data/camera_check.json（目視確認の結果）。戻り値は (カメラID→状態, 候補から外す状態の集合)。"""
     path = DATA / "camera_check.json"
@@ -136,8 +143,11 @@ def build_mapping(cams: list[dict]) -> dict[str, dict]:
         near = sorted(((dist_m(lat, lon, c["lat"], c["lon"]), c) for c in usable), key=lambda x: x[0])
         pack = lambda c, d: {"scam_id": str(c["scam_id"]), "name": c["name"], "kind": c["kind"],  # noqa: E731
                              "dist_m": round(d), "img_url": c["img_url"], "status": status.get(str(c["scam_id"]), "ok")}
+        # 同じ川: 河川コードが一致（通常の水位計）か、川の名前が一致（危機管理型はコード体系が違うので名前で）
+        rn = river_name(p.get("obs_nm", ""))
         river = [pack(c, dist_m(lat, lon, c["lat"], c["lon"])) for c in usable
-                 if p.get("rvr_cd") and str(c.get("rvr_cd") or "") == str(p["rvr_cd"])]
+                 if (p.get("rvr_cd") and str(c.get("rvr_cd") or "") == str(p["rvr_cd"]))
+                 or (rn and river_name(c["name"]) == rn)]
         mapping[p["obs_id"]] = {"near": [pack(c, d) for d, c in near[:MAX_PER_STATION] if d <= RADIUS],
                                 "river": sorted(river, key=lambda x: x["dist_m"])}
     (DOCS / "station_cameras.json").write_text(json.dumps(mapping, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
