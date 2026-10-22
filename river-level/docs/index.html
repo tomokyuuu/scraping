@@ -376,26 +376,31 @@ async function showChart(src, id) {
   });
 }
 
-function treeHtml(node) {
-  const fmtSize = n => n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : n + " B";
-  const files = node.files.map(f => `<li><a href="${f.url}" target="_blank" rel="noopener">${f.name}</a><small>${fmtSize(f.size)} · ${f.updated.slice(0, 16).replace("T", " ")}</small></li>`).join("");
-  const folders = node.folders.map(c => `<li><span class="fo">📁 ${c.name}</span>${treeHtml(c)}</li>`).join("");
-  return `<ul>${folders}${files}</ul>`;
-}
-
-// 出水ごとの記録（events.json）。棚卸のとき Drive のどの日付がどの出水か分かるように
-function eventsHtml(events) {
-  if (!events || !events.length) return "<div><small>出水の記録はまだありません</small></div>";
-  const rows = [...events].reverse().map(e => {
-    const m = e.max_station;
-    return `<tr><td><small>${e.since}<br>〜 ${e.until ?? "<b style='color:#a00'>継続中</b>"}</small></td>
-      <td>${m ? `${m.obs_nm} <small>${m.pref === "ishikawa" ? "石川" : "富山"}</small><br><b>${(+m.max).toFixed(2)} m</b> <small>${m.lv_name}・${m.at}</small>` : "--"}</td>
-      <td style="text-align:right">${e.over_warn ?? 0}</td><td style="text-align:right">${e.flooded ?? 0}${e.flooded_names?.length ? `<br><small>${e.flooded_names.slice(0, 4).join("、")}${e.flooded_names.length > 4 ? "…" : ""}</small>` : ""}</td>
-      <td style="text-align:right">${e.cameras ?? 0} 台<br><small>${e.camera_images ?? 0} 枚</small></td>
-      <td><small>${e.trigger === "manual" ? "手動" : "自動"}</small></td></tr>`;
+// Drive台帳: フォルダをクリックしたときに、その中身だけ読む（段階表示）
+const fmtSize = n => n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : n + " B";
+function treeHtml(node, path) {
+  const files = (node.files ?? []).map(f => `<li><a href="${f.url}" target="_blank" rel="noopener">${f.name}</a><small>${fmtSize(f.size)} · ${f.updated.slice(0, 16).replace("T", " ")}</small></li>`).join("");
+  const folders = (node.folders ?? []).map(c => {
+    const p = path ? `${path}/${c.name}` : c.name;
+    return `<li><span class="fo" style="cursor:pointer" onclick="toggleFolder(this, '${p}')">▸ 📁 ${c.name}</span><div class="sub" style="display:none"></div></li>`;
   }).join("");
-  return `<table style="border-collapse:collapse;width:100%;margin-bottom:10px">
-    <tr style="color:var(--muted)"><td>期間</td><td>最大水位の観測所</td><td>氾濫注意以上</td><td>氾濫開始超え</td><td>カメラ</td><td></td></tr>${rows}</table>`;
+  const total = (node.files ?? []).reduce((s, f) => s + (f.size || 0), 0);
+  const sum = node.files?.length ? `<li><small style="color:var(--muted)">${node.files.length} ファイル · ${fmtSize(total)}</small></li>` : "";
+  return `<ul>${folders}${files}${sum}</ul>`;
+}
+async function toggleFolder(el, path) {
+  const sub = el.nextElementSibling;
+  if (sub.style.display !== "none") { sub.style.display = "none"; el.textContent = el.textContent.replace("▾", "▸"); return; }
+  el.textContent = el.textContent.replace("▸", "▾");
+  sub.style.display = "";
+  if (!sub.dataset.loaded) {
+    sub.innerHTML = "<small>読み込み中…</small>";
+    try {
+      const r = await (await fetch(`${API_URL}?ls=${encodeURIComponent(path)}&pw=${encodeURIComponent(pw)}`)).json();
+      sub.innerHTML = r.ok ? treeHtml(r.tree, path) : `<small>取得できません: ${r.error}</small>`;
+      sub.dataset.loaded = "1";
+    } catch (e) { sub.innerHTML = `<small>読み込み失敗: ${e}</small>`; }
+  }
 }
 
 btnEvents.onclick = async () => {
@@ -405,13 +410,13 @@ btnEvents.onclick = async () => {
 };
 
 btnLedger.onclick = async () => {
-  openPanel("Drive台帳", "<div>Drive を読み込み中…（数秒かかります）</div>");
+  openPanel("Drive台帳", "<div>Drive を読み込み中…</div>");
   let r;
-  try { r = await (await fetch(`${API_URL}?tree=1&pw=${encodeURIComponent(pw)}`)).json(); } catch (e) { panelBody.textContent = "読み込み失敗: " + e; return; }
+  try { r = await (await fetch(`${API_URL}?ls=&pw=${encodeURIComponent(pw)}`)).json(); } catch (e) { panelBody.textContent = "読み込み失敗: " + e; return; }
   if (!r.ok) { panelBody.textContent = "取得できません: " + r.error; return; }
   const desc = `<div style="margin-bottom:6px"><a href="${r.root}" target="_blank" rel="noopener">${r.tree.name}</a> を Drive で開く ·
-    ishikawa / toyama = 川の防災情報（国交省）、toyama_city = 富山市、jma_tide = 気象庁潮位。日別 CSV（10分値）。series/ は地図のグラフ用、camera/ はカメラ画像</div>`;
-  panelBody.innerHTML = desc + `<div class="tree">${treeHtml(r.tree)}</div>`;
+    ishikawa / toyama = 川の防災情報（国交省）、toyama_city = 富山市、jma_tide = 気象庁潮位。日別 CSV（10分値）。series/ は地図のグラフ用、camera/ はカメラ画像。フォルダをクリックで開く</div>`;
+  panelBody.innerHTML = desc + `<div class="tree">${treeHtml(r.tree, "")}</div>`;
 };
 
 // 凡例をドラッグで移動。位置はこのブラウザに記憶する

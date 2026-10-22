@@ -83,6 +83,13 @@ function doGet(e) {
     }
     if (p.auth) return reply_({ ok: true, root: root_().getUrl() });
     if (p.tree) return reply_({ ok: true, root: root_().getUrl(), tree: tree_(root_(), 0) });
+    if (p.ls !== undefined) {
+      // 1階層だけ（データ台帳を段階的に開くため）。ls=ishikawa/2026 のようにパス指定。空ならルート
+      var parts = String(p.ls || "").split("/").filter(function (s) { return s && s !== ".."; });
+      var folder = subfolder_(root_(), parts, false);
+      if (!folder) return reply_({ ok: false, error: "no folder " + p.ls });
+      return reply_({ ok: true, root: root_().getUrl(), tree: tree_(folder, 3) });
+    }
     if (p.series) return reply_(series_(String(p.series), String(p.id || "")));
     return reply_({ ok: true, message: "river-level endpoint" });
   } catch (err) {
@@ -113,11 +120,13 @@ function tree_(folder, depth) {
     out.files.push({ name: f.getName(), size: f.getSize(), updated: f.getLastUpdated().toISOString(), url: f.getUrl() });
   }
   out.files.sort(function (a, b) { return a.name < b.name ? -1 : 1; });
-  if (depth < 3) {
-    var it = folder.getFolders();
-    while (it.hasNext()) out.folders.push(tree_(it.next(), depth + 1));
-    out.folders.sort(function (a, b) { return a.name < b.name ? -1 : 1; });
+  var it = folder.getFolders();
+  while (it.hasNext()) {
+    var sub = it.next();
+    // depth 3 以上は中身を読まず名前だけ（段階表示用）
+    out.folders.push(depth < 3 ? tree_(sub, depth + 1) : { name: sub.getName(), url: sub.getUrl(), folders: null, files: null });
   }
+  out.folders.sort(function (a, b) { return a.name < b.name ? -1 : 1; });
   return out;
 }
 
