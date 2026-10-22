@@ -17,8 +17,10 @@
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
     font-family: system-ui, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif; }
   #map { position: absolute; inset: 0; }
-  #head { position: absolute; top: 0; left: 0; right: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px 14px;
-    align-items: center; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--line); font-size: 14px; }
+  #head { position: absolute; top: 0; left: 0; right: 0; z-index: 2; padding: 6px 16px; background: var(--panel);
+    border-bottom: 1px solid var(--line); font-size: 14px; }
+  #head .row { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
+  #head .row + .row { margin-top: 4px; }
   #head h1 { font-size: 16px; margin: 0 8px 0 0; }
   #head a, #panel a { color: var(--accent); }
   #head label { display: inline-flex; align-items: center; gap: 4px; }
@@ -33,7 +35,7 @@
   .sw.sq { border-radius: 2px; }
   .sw.dia { border-radius: 0; transform: rotate(45deg); width: 9px; height: 9px; }
   .sw.ring { box-shadow: 0 0 0 3px #e03030; }
-  #panel { position: absolute; top: 56px; right: 10px; z-index: 3; width: min(560px, calc(100vw - 20px)); max-height: calc(100vh - 70px);
+  #panel { position: absolute; top: 76px; right: 10px; z-index: 3; width: min(560px, calc(100vw - 20px)); max-height: calc(100vh - 70px);
     overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: none;
     box-shadow: 0 4px 16px #0003; font-size: 13px; }
   #panel.show { display: block; }
@@ -54,26 +56,30 @@
 </head>
 <body>
 <div id="head">
-  <h1>石川・富山 河川水位</h1>
-  <span id="status">読み込み中…</span>
-  <span id="updated"></span>
-  <label><input type="checkbox" id="chkStg" checked> 水位計</label>
-  <label><input type="checkbox" id="chkSw" checked> 危機管理型</label>
-  <label><input type="checkbox" id="chkCity" checked> 富山市</label>
-  <label><input type="checkbox" id="chkTide" checked> 潮位</label>
-  <label><input type="checkbox" id="chkMissing"> 欠測も表示</label>
-  <label><input type="checkbox" id="chkTrig"> トリガー地点</label>
-  <label><input type="checkbox" id="chkPeak"> 期間最大で色分け</label>
-  <button id="btnPeak">危なかった地点</button>
-  <select id="base">
-    <option value="gsi-pale">地理院 淡色</option>
-    <option value="gsi-std">地理院 標準</option>
-    <option value="gsi-photo">航空写真</option>
-    <option value="osm">OpenStreetMap</option>
-  </select>
-  <button id="btnLedger">データ台帳</button>
-  <a id="dataLink" href="https://drive.google.com/drive/folders/1Hzr2jctAziRDwGx7jakB7aGb4kvA_D5W" target="_blank" rel="noopener">保存先（Drive）</a>
-  <a href="https://www.river.go.jp/" target="_blank" rel="noopener">出典: 川の防災情報</a>
+  <div class="row">
+    <h1>石川・富山 河川水位</h1>
+    <span id="status">読み込み中…</span>
+    <span id="updated"></span>
+    <select id="base">
+      <option value="gsi-pale">地理院 淡色</option>
+      <option value="gsi-std">地理院 標準</option>
+      <option value="gsi-photo">航空写真</option>
+      <option value="osm">OpenStreetMap</option>
+    </select>
+    <button id="btnLedger">データ台帳</button>
+    <a id="dataLink" href="https://drive.google.com/drive/folders/1Hzr2jctAziRDwGx7jakB7aGb4kvA_D5W" target="_blank" rel="noopener">保存先（Drive）</a>
+    <a href="https://www.river.go.jp/" target="_blank" rel="noopener">出典: 川の防災情報</a>
+  </div>
+  <div class="row">
+    <label><input type="checkbox" id="chkStg" checked> 水位計</label>
+    <label><input type="checkbox" id="chkSw" checked> 危機管理型</label>
+    <label><input type="checkbox" id="chkCity" checked> 富山市</label>
+    <label><input type="checkbox" id="chkTide" checked> 潮位</label>
+    <label><input type="checkbox" id="chkMissing"> 欠測も表示</label>
+    <label><input type="checkbox" id="chkTrig"> トリガー地点</label>
+    <label><input type="checkbox" id="chkPeak"> 期間最大で色分け</label>
+    <button id="btnPeak">危なかった地点</button>
+  </div>
 </div>
 <div id="map"></div>
 <div id="legend">
