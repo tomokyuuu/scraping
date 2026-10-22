@@ -13,6 +13,7 @@
  *
  * POST（書き込み。トークン必須）: {token, path: "ishikawa/2026/2026-10-20.csv", content: "..."}
  *   path のフォルダは無ければ作る。同名ファイルがあれば中身を上書きする（ファイル ID は変わらない）。
+ *   画像は {token, path: "camera/104353011/20261022_0925.jpg", content_b64: "..."}（同名があれば何もしない）
  * GET（読み取り。トークン不要。中身は公開データ）:
  *   ?tree=1                       フォルダ構成（データ台帳）
  *   ?series=<src>&id=<obs_id>     1観測所の時系列（series/<src>.json から切り出す）
@@ -30,7 +31,15 @@ function doPost(e) {
     var folder = subfolder_(root_(), parts, true);
     var files = folder.getFilesByName(name);
     var file;
-    if (files.hasNext()) {
+    if (body.content_b64) {
+      // 画像などのバイナリ（base64）。同名があれば置き換えずそのまま（撮影時刻がファイル名なので同じ中身）
+      if (files.hasNext()) {
+        file = files.next();
+      } else {
+        var mimeB = /\.png$/i.test(name) ? "image/png" : "image/jpeg";
+        file = folder.createFile(Utilities.newBlob(Utilities.base64Decode(body.content_b64), mimeB, name));
+      }
+    } else if (files.hasNext()) {
       file = files.next();
       file.setContent(body.content);
     } else {

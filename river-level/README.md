@@ -32,13 +32,30 @@
 
 判定の基準は Actions の Variables `ALERT_FIELD` で変えられる（`rsrv_stg`=水防団待機, `warn_stg`=氾濫注意（既定）, `spcl_warn_stg`=避難判断, `dng_stg`=氾濫危険）。危機管理型は晴天でも基準超えのまま止まっている地点があるので判定には使わない（データは取る）。
 
+## 地図でできること
+
+- 現在値（白○。氾濫危険以上で赤、氾濫開始/計画高水位以上で紫）、「期間最大で色分け」で取得期間の最大水位による色分け
+- 「危なかった地点」: 取得期間中に氾濫注意以上になった地点の一覧（段階・最大値・時刻）
+- 地点クリック → 「グラフ」: Drive に保存中の時系列（Apps Script 経由で読む）
+- 「データ台帳」: Drive の中身のツリー
+- 「📷 カメラ」: 川の防災情報の河川カメラ 597 台の位置。クリックで現在画像
+
+## カメラ画像の保存（fetch_camera.py）
+
+無差別には撮らない。**氾濫開始水位／計画高水位以上**になった観測所（通常・危機管理型とも）から 500 m 以内のカメラ（最大2台）だけ、取得中の毎時に1枚、Drive の `camera/{カメラID}/{撮影時刻}.jpg` に保存する。基準は Variables `CAM_FIELD`（`fld_stg` 既定 / `dng_stg` / `spcl_warn_stg` / `warn_stg`）、半径は `CAM_RADIUS_M`。
+カメラ一覧は `data/cameras.csv`（`python fetch_camera.py --build` で作り直し）。
+
 ## ファイル
 
 ```
 fetch_river_level.py   川の防災情報 → data/{ishikawa,toyama}/YYYY/YYYY-MM-DD.csv, data/stations.csv, docs/latest.geojson
 fetch_toyama_city.py   富山市 → data/toyama_city/YYYY/YYYY-MM-DD.csv, data/toyama_city/stations.csv, docs/latest_toyama_city.geojson
 fetch_jma_tide.py      気象庁潮位 → data/jma_tide/YYYY/YYYY-MM-DD.csv, data/jma_tide/stations.csv, docs/latest_jma_tide.geojson
-check_alert.py         増水判定
+check_alert.py         増水判定 → docs/alert.json
+peak.py                取得期間の最大水位 → docs/peak.json
+fetch_camera.py        氾濫中の観測所近くのカメラ画像 → data/camera/, docs/camera_index.json
+update_status.py       取得状況 → docs/status.json
+series.py              グラフ用の時系列 JSON（data/series/）
 upload_drive.py        data/ の日別 CSV を Drive に送る（同名は上書き）
 apps-script/Code.gs    Drive 側の受け口（Web App）
 docs/index.html        地図ページ（MapLibre + 地理院タイル）

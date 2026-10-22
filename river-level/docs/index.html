@@ -79,6 +79,7 @@
     <label><input type="checkbox" id="chkTrig"> トリガー地点</label>
     <label><input type="checkbox" id="chkPeak"> 期間最大で色分け</label>
     <button id="btnPeak">危なかった地点</button>
+    <label style="margin-left:10px"><input type="checkbox" id="chkCam"> 📷 カメラ</label>
   </div>
 </div>
 <div id="map"></div>
@@ -90,6 +91,7 @@
   <div><span class="sw" style="background:#bbb"></span>欠測</div>
   <div id="legendPeak" style="display:none"><span class="sw" style="background:#f2c100"></span>（期間最大）氾濫注意 <span class="sw" style="background:#f28c00;margin-left:6px"></span>避難判断</div>
   <div><span class="sw ring"></span>取得のトリガーになった地点</div>
+  <div><span class="sw" style="background:#6cf;border-radius:2px"></span>📷 カメラ（<span class="sw" style="background:#ff8c00;border-radius:2px;margin:0 2px 0 0"></span>＝画像を保存済み）</div>
 </div>
 <div id="panel">
   <h2><span id="panelTitle"></span><button id="panelClose">閉じる</button></h2>
@@ -118,7 +120,8 @@ map.addControl(new maplibregl.NavigationControl(), "top-right");
 map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: false }), "top-right");
 
 let data = null, alert = { over: [] }, status = {}, peak = { peaks: {}, period: {} };
-const markers = [];
+let cameras = null, camIndex = {};
+const markers = [], camMarkers = [];
 const LV_NAME = ["基準未満", "水防団待機", "氾濫注意", "避難判断", "氾濫危険", "氾濫開始/計画高水位"];
 const LV_COLOR = ["#fff", "#fff", "#f2c100", "#f28c00", "#e03030", "#8b008b"];
 const SRC_OF = { stg: p => p.pref, swstg: p => p.pref, city: () => "toyama_city", tide: () => "jma_tide" };
@@ -210,6 +213,7 @@ function render() {
     shown++;
   }
   updated.textContent = `更新 ${data.updated}（${shown} / ${data.features.length} 地点）`;
+  renderCameras();
   const st = document.getElementById("status");
   if (status.active) {
     st.className = "active";
@@ -220,19 +224,50 @@ function render() {
   }
 }
 
+// 河川カメラ（簡易型河川監視カメラ・CCTV）。撮るのは氾濫開始水位以上の観測所の近くだけ
+function camPopup(p) {
+  const ix = camIndex[p.scam_id] ?? {};
+  const shots = ix.shots ?? [];
+  const saved = ix.count ? `<div>保存 ${ix.count} 枚（最新 ${ix.last_time ?? ""}）
+    <a href="${dataLink.href}" target="_blank" rel="noopener">Drive の camera/${p.scam_id}/</a></div>` : `<div><small>保存画像なし</small></div>`;
+  const near = ix.stations ? `<div><small>対象観測所: ${ix.stations.map(s => `${s.obs_nm}(${s.dist_m}m)`).join("、")}</small></div>` : "";
+  return `<b>📷 ${p.name}</b> <small>${p.kind === "scam" ? "簡易型河川監視カメラ" : "CCTV"}</small>
+    <div style="margin:6px 0"><a href="${p.img_url}" target="_blank" rel="noopener"><img src="${p.img_url}?t=${Date.now()}" style="width:280px;display:block;border:1px solid #ccc" alt="現在の画像"></a>
+    <small>現在の画像（クリックで原寸、約10分ごとに更新）</small></div>${saved}${near}`;
+}
+
+function renderCameras() {
+  camMarkers.forEach(m => m.remove());
+  camMarkers.length = 0;
+  if (!chkCam.checked || !cameras) return;
+  for (const f of cameras.features) {
+    const p = f.properties;
+    const el = document.createElement("div");
+    const saved = (camIndex[p.scam_id]?.count ?? 0) > 0;
+    el.style.cssText = `width:10px;height:10px;border:1px solid #333;background:${saved ? "#ff8c00" : "#6cf"};cursor:pointer;` +
+      `clip-path:polygon(0 25%,30% 25%,40% 0,60% 0,70% 25%,100% 25%,100% 100%,0 100%)`;
+    el.title = `📷 ${p.name}`;
+    const m = new maplibregl.Marker({ element: el }).setLngLat(f.geometry.coordinates)
+      .setPopup(new maplibregl.Popup({ offset: 8, maxWidth: "320px" }).setHTML(camPopup(p))).addTo(map);
+    camMarkers.push(m);
+  }
+}
+
 async function getJson(name) {
   try { return await (await fetch(name + "?t=" + Date.now(), { cache: "no-store" })).json(); } catch (e) { return null; }
 }
 
 async function load() {
-  const [a, b, c, al, st, pk] = await Promise.all([
+  const [a, b, c, al, st, pk, cm, ci] = await Promise.all([
     getJson("latest.geojson"), getJson("latest_toyama_city.geojson"), getJson("latest_jma_tide.geojson"),
-    getJson("alert.json"), getJson("status.json"), getJson("peak.json")]);
+    getJson("alert.json"), getJson("status.json"), getJson("peak.json"), getJson("cameras.geojson"), getJson("camera_index.json")]);
   if (!a) { updated.textContent = "読み込み失敗"; return; }
   data = { updated: a.updated, features: [...a.features, ...(b?.features ?? []), ...(c?.features ?? [])] };
   alert = al ?? { over: [] };
   status = st ?? {};
   peak = pk ?? { peaks: {}, period: {} };
+  cameras = cm;
+  camIndex = ci ?? {};
   if (a.data_url) dataLink.href = a.data_url;
   render();
 }
@@ -348,6 +383,7 @@ function flyTo(id) {
 })();
 
 [chkStg, chkSw, chkCity, chkTide, chkMissing, chkTrig, chkPeak].forEach(c => c.addEventListener("change", render));
+chkCam.addEventListener("change", renderCameras);
 base.addEventListener("change", () => map.setStyle(style(base.value)));
 map.on("load", load);
 setInterval(load, 10 * 60 * 1000);

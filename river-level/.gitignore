@@ -1,4 +1,5 @@
 __pycache__/
-# 日別 CSV と時系列 JSON は Drive に送る（Git には入れない）。観測所一覧 stations.csv だけ残す
+# 日別 CSV・時系列 JSON・カメラ画像は Drive に送る（Git には入れない）。観測所/カメラ一覧だけ残す
 data/**/20*.csv
 data/series/
+data/camera/

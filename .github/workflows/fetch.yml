@@ -35,6 +35,8 @@ env:
   # 地図の「保存データ」リンク先（Drive のフォルダ URL）
   DATA_URL: ${{ vars.DATA_URL || 'https://drive.google.com/drive/folders/1Hzr2jctAziRDwGx7jakB7aGb4kvA_D5W' }}
   ALERT_FIELD: ${{ vars.ALERT_FIELD || 'warn_stg' }}
+  CAM_FIELD: ${{ vars.CAM_FIELD || 'fld_stg' }}
+  CAM_RADIUS_M: ${{ vars.CAM_RADIUS_M || '500' }}
 
 defaults:
   run:
@@ -76,6 +78,7 @@ jobs:
           python fetch_river_level.py --days $D
           python fetch_toyama_city.py --days $D
           python fetch_jma_tide.py --days $D
+          python fetch_camera.py
           python upload_drive.py
           python peak.py
           python update_status.py fetched $D ${{ steps.decide.outputs.trigger }}
@@ -88,7 +91,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/*.geojson docs/*.json data/stations.csv data/*/stations.csv
+          git add docs/*.geojson docs/*.json data/stations.csv data/*/stations.csv data/cameras.csv
           if git diff --cached --quiet; then
             echo "no changes"
           else

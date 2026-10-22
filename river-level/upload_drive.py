@@ -12,6 +12,7 @@ Drive 側のフォルダ構成は data/ と同じ（ishikawa/2026/2026-10-20.csv
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 import sys
@@ -23,8 +24,13 @@ ROOT = Path(__file__).parent
 DATA = ROOT / "data"
 
 
-def upload(url: str, token: str, rel: str, content: str, retries: int = 3) -> dict:
-    body = json.dumps({"token": token, "path": rel, "content": content}).encode("utf-8")
+def upload(url: str, token: str, rel: str, content: str | bytes, retries: int = 3) -> dict:
+    payload = {"token": token, "path": rel}
+    if isinstance(content, bytes):
+        payload["content_b64"] = base64.b64encode(content).decode("ascii")
+    else:
+        payload["content"] = content
+    body = json.dumps(payload).encode("utf-8")
     for i in range(retries):
         try:
             req = urllib.request.Request(url, data=body, method="POST",
@@ -49,12 +55,17 @@ def main() -> None:
         return
     args = sys.argv[1:]
     since = args[args.index("--since") + 1] if "--since" in args else ""
-    files = sorted(p for p in DATA.rglob("*.csv") if p.name != "stations.csv" and p.stem >= since)
+    files = sorted(p for p in DATA.rglob("*.csv") if p.name not in ("stations.csv", "cameras.csv") and p.stem >= since)
     files += sorted(DATA.glob("series/*.json"))  # 地図のグラフ用
+    files += sorted(DATA.glob("camera/*/*.jpg"))  # カメラ画像（送ったら消す。Drive 側は同名なら何もしない）
     for p in files:
         rel = p.relative_to(DATA).as_posix()
-        res = upload(url, token, rel, p.read_text(encoding="utf-8"))
-        print(f"uploaded {rel} ({p.stat().st_size // 1024} KB) -> {res.get('id', '')}")
+        if p.suffix == ".jpg":
+            res = upload(url, token, rel, p.read_bytes())
+            p.unlink()
+        else:
+            res = upload(url, token, rel, p.read_text(encoding="utf-8"))
+        print(f"uploaded {rel} ({p.stat().st_size // 1024 if p.exists() else '-'} KB) -> {res.get('id', '')}")
     for p in DATA.rglob("stations.csv"):
         rel = p.relative_to(DATA).as_posix()
         upload(url, token, rel, p.read_text(encoding="utf-8"))
