@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>石川・富山 河川水位</title>
+<title>·</title>
 <link rel="icon" href="icon.png">
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
@@ -65,11 +65,8 @@
 </head>
 <body>
 <div id="gate">
-  <div class="box">
-    <div style="font-size:18px;font-weight:600">石川・富山 河川水位（研究用）</div>
-    <div style="margin:8px 0 14px;color:var(--muted);font-size:13px">関係者向けの私的なページです。<br>河川の防災情報は公式サイト
-      <a href="https://www.river.go.jp/" style="color:var(--accent)">川の防災情報（国土交通省）</a> をご覧ください。</div>
-    <form id="gateForm"><input type="password" id="gatePw" placeholder="合言葉" autocomplete="current-password"> <button type="submit">開く</button></form>
+  <div class="box" style="border:none">
+    <form id="gateForm"><input type="password" id="gatePw" autocomplete="current-password" aria-label="password"> <button type="submit">→</button></form>
     <div id="gateMsg" style="color:#c00;font-size:13px;min-height:1.4em"></div>
   </div>
 </div>
@@ -150,6 +147,7 @@ async function verify(p) {
     if (!r.ok) return false;
     authed = true; pw = p;
     document.body.classList.add("auth");
+    document.title = "石川・富山 河川水位";
     if (r.root) dataLink.href = r.root;
     try { localStorage.setItem("viewPw", p); } catch (e) { /* 無視 */ }
     return true;
@@ -314,7 +312,7 @@ gateForm.onsubmit = async e => {
   e.preventDefault();
   gateMsg.textContent = "確認中…";
   if (await verify(gatePw.value)) { gateMsg.textContent = ""; load(); map.resize(); }
-  else gateMsg.textContent = "合言葉が違います";
+  else gateMsg.textContent = "×";
 };
 btnLogin.onclick = () => { if (confirm("この端末の合言葉を忘れてログアウトしますか？")) { logout(); location.reload(); } };
 if (pw) verify(pw).then(ok => { if (ok) { load(); map.resize(); } else logout(); });
