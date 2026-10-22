@@ -20,6 +20,8 @@ env:
   CAM_FIELD: ${{ vars.CAM_FIELD || 'fld_stg' }}
   CAM_RADIUS_M: ${{ vars.CAM_RADIUS_M || '500' }}
   CAM_SAME_RIVER: ${{ vars.CAM_SAME_RIVER || '1' }}
+  CAM_BACKFILL_HOURS: ${{ vars.CAM_BACKFILL_HOURS || '48' }}
+  CAM_BACKFILL_RIVER_STEP: ${{ vars.CAM_BACKFILL_RIVER_STEP || '30' }}
 
 defaults:
   run:

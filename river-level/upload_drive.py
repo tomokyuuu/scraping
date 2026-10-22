@@ -57,10 +57,10 @@ def main() -> None:
     since = args[args.index("--since") + 1] if "--since" in args else ""
     files = sorted(p for p in DATA.rglob("*.csv") if p.name not in ("stations.csv", "cameras.csv") and p.stem >= since)
     files += sorted(DATA.glob("series/*.json"))  # 地図のグラフ用
-    files += sorted(DATA.glob("camera/*/*.jpg"))  # カメラ画像（送ったら消す。Drive 側は同名なら何もしない）
+    files += sorted(DATA.glob("camera/*/*.jpg")) + sorted(DATA.glob("camera/*/*.zip"))  # カメラ画像（送ったら消す）
     for p in files:
         rel = p.relative_to(DATA).as_posix()
-        if p.suffix == ".jpg":
+        if p.suffix in (".jpg", ".zip"):
             res = upload(url, token, rel, p.read_bytes())
             p.unlink()
         else:

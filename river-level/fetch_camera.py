@@ -11,8 +11,13 @@ data/camera_check.json（目視確認の結果）で「取得不可・メンテ�
   詳細  : /kawabou/file/files/master/obs/scam/{scamId}.json（lat/lon, currProvUrl, currDateProvUrl）
 画像  : https://cam.river.go.jp/cam/now/{scamId}.jpg  時刻: 同 .json の get_time（約10分ごと更新）
 
+初めて対象になったカメラは、履歴 https://cam.river.go.jp/cam/history/{YYYYMMDDHHmm}/{scamId}.jpg（約30日保持）から
+過去 CAM_BACKFILL_HOURS 時間（既定48）を遡って取る。近くのカメラは10分刻み、同じ川の他は CAM_BACKFILL_RIVER_STEP 分刻み（既定30）。
+遡った分は枚数が多いので日ごとの zip（backfill_{YYYYMMDD}.zip）にまとめる。
+
 出力:
   data/camera/{scamId}/{YYYYMMDD_HHMM}.jpg   画像（同じ get_time のものは撮り直さない）
+  data/camera/{scamId}/backfill_{YYYYMMDD}.zip  遡って取った画像
   docs/camera_index.json                     どのカメラを何枚撮ったか（地図のポップアップ用）
   docs/station_cameras.json                  観測所 → 近くのカメラ の対応表（--build で作り直し。地図にも使う）
 """
@@ -26,11 +31,15 @@ import os
 import sys
 import time
 import urllib.request
-from datetime import datetime
+import zipfile
+from datetime import datetime, timedelta
 from pathlib import Path
 
 BASE = "https://www.river.go.jp/kawabou/file"
 CAM = "https://cam.river.go.jp/cam/now/"
+CAM_HISTORY = "https://cam.river.go.jp/cam/history/"
+BACKFILL_HOURS = int(os.environ.get("CAM_BACKFILL_HOURS", "48"))   # 初めて対象になったとき何時間遡るか
+BACKFILL_RIVER_STEP = int(os.environ.get("CAM_BACKFILL_RIVER_STEP", "30"))  # 同じ川の他のカメラの刻み（分）
 UA = "Mozilla/5.0 (river-level logger; github actions)"
 PREFS = {"1701": "ishikawa", "1601": "toyama"}
 RADIUS = float(os.environ.get("CAM_RADIUS_M", "500"))
@@ -177,6 +186,31 @@ def target_stations() -> list[dict]:
     return out
 
 
+def backfill(sid: str, c: dict, step_min: int) -> int:
+    """過去 BACKFILL_HOURS 時間の履歴画像を step_min 刻みで取り、日ごとの zip にまとめる。
+    履歴: https://cam.river.go.jp/cam/history/{YYYYMMDDHHmm}/{scamId}.jpg（約30日保持。簡易型は5分、CCTV は10分刻み）"""
+    now = datetime.now().replace(second=0, microsecond=0)
+    t = now - timedelta(minutes=now.minute % 10)
+    start = t - timedelta(hours=BACKFILL_HOURS)
+    out_dir = DATA / "camera" / sid
+    out_dir.mkdir(parents=True, exist_ok=True)
+    zips: dict[str, zipfile.ZipFile] = {}
+    n = 0
+    while t > start:
+        t -= timedelta(minutes=step_min)
+        img = get(f"{CAM_HISTORY}{t:%Y%m%d%H%M}/{sid}.jpg")
+        if img and len(img) >= 1000:
+            day = t.strftime("%Y%m%d")
+            if day not in zips:
+                zips[day] = zipfile.ZipFile(out_dir / f"backfill_{day}.zip", "a", zipfile.ZIP_STORED)
+            zips[day].writestr(f"{t:%Y%m%d_%H%M}.jpg", img)
+            n += 1
+    for z in zips.values():
+        z.close()
+    print(f"camera backfill {sid} {c['name']}: {n} images ({BACKFILL_HOURS}h, {step_min}min step)")
+    return n
+
+
 def main(build: bool) -> None:
     cams = build_cameras() if build else load_cameras()
     mapping = build_mapping(cams) if build else load_mapping(cams)
@@ -191,13 +225,22 @@ def main(build: bool) -> None:
             c = by_id.get(m["scam_id"])
             if not c:
                 continue
-            e = picked.setdefault(m["scam_id"], {**c, "stations": []})
-            e["stations"].append({"obs_id": s["obs_id"], "obs_nm": s["obs_nm"], "dist_m": m["dist_m"]})
+            e = picked.setdefault(m["scam_id"], {**c, "stations": [], "near": False})
+            if not any(x["obs_id"] == s["obs_id"] for x in e["stations"]):  # near と river の両方に載ることがある
+                e["stations"].append({"obs_id": s["obs_id"], "obs_nm": s["obs_nm"], "dist_m": m["dist_m"]})
+            e["near"] = e["near"] or m in entry["near"]
     print(f"camera: {len(stations)} target stations -> {len(picked)} cameras")
 
     index = json.loads(INDEX.read_text(encoding="utf-8")) if INDEX.exists() else {}
     saved = 0
     for sid, c in picked.items():
+        # 初めて対象になったカメラは過去の画像を遡って取る（近くのカメラは10分刻み、同じ川の他は30分刻み）
+        if sid not in index or not index[sid].get("backfilled"):
+            n = backfill(sid, c, 10 if c["near"] else BACKFILL_RIVER_STEP)
+            index.setdefault(sid, {"name": c["name"], "kind": c["kind"], "lat": c["lat"], "lon": c["lon"],
+                                   "img_url": c["img_url"], "count": 0, "shots": []})
+            index[sid]["backfilled"] = datetime.now().strftime("%Y/%m/%d %H:%M")
+            index[sid]["backfill_images"] = n
         tinfo = {}
         if c.get("time_url"):
             b = get(c["time_url"])

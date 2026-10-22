@@ -46,7 +46,7 @@ function doPost(e) {
       if (files.hasNext()) {
         file = files.next();
       } else {
-        var mimeB = /\.png$/i.test(name) ? "image/png" : "image/jpeg";
+        var mimeB = /\.png$/i.test(name) ? "image/png" : /\.zip$/i.test(name) ? "application/zip" : "image/jpeg";
         file = folder.createFile(Utilities.newBlob(Utilities.base64Decode(body.content_b64), mimeB, name));
       }
     } else if (files.hasNext()) {

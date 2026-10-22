@@ -48,6 +48,7 @@
 
 無差別には撮らない。**氾濫開始水位／計画高水位以上**になった観測所（通常・危機管理型とも）について、500 m 以内のカメラ（最大2台）＋**同じ川のカメラ全部**を、**10分おき**（`.github/workflows/camera.yml`）に Drive の `camera/{カメラID}/{撮影時刻}.jpg` に保存する。氾濫していなければ数秒で終わる。
 基準は Variables `CAM_FIELD`（`fld_stg` 既定 / `dng_stg` / `spcl_warn_stg` / `warn_stg`）、半径は `CAM_RADIUS_M`、同じ川を含めるかは `CAM_SAME_RIVER`（既定 1）。
+**過去にも遡れる**: 川の防災情報は履歴画像 `cam.river.go.jp/cam/history/{YYYYMMDDHHmm}/{カメラID}.jpg` を約30日分持っている（簡易型 5分刻み、CCTV 10分刻み）。カメラが初めて対象になったとき、過去 `CAM_BACKFILL_HOURS`（既定 48）時間を遡って取り、日ごとの zip（`backfill_{日付}.zip`）で Drive に置く。近くのカメラは10分刻み、同じ川の他のカメラは `CAM_BACKFILL_RIVER_STEP`（既定 30）分刻み。
 カメラ一覧は `data/cameras.csv`（`python fetch_camera.py --build` で作り直し）。観測所→カメラの対応表は `docs/station_cameras.json`（near=近く、river=同じ川）。
 `data/camera_check.json` は 2026-10-22 に全カメラを目視確認した結果で、取得不可（28台）・真っ白/真っ黒・メンテ中・海岸・川が見えない（計37台）は候補から外す。曇り・葉で遮られる（8台）は残す。
 
