@@ -49,6 +49,8 @@ jobs:
             echo "no changes"
           else
             git commit -m "river-level camera: $(date +'%Y-%m-%d %H:%M JST')"
+            # 最新値の更新で変わった他のファイルは本体ジョブに任せる（残っていると rebase できない）
+            git checkout -- .
             git pull --rebase -X theirs origin main
             git push
           fi
