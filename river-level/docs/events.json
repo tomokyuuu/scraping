@@ -27,5 +27,34 @@
    "from": "2026/10/16 00:00",
    "to": "2026/10/23 04:50"
   }
+ },
+ {
+  "since": "2026/10/25 05:50",
+  "trigger": "alert",
+  "until": null,
+  "last_fetch": "2026/10/25 05:50",
+  "max_station": {
+   "obs_id": "1700000094",
+   "obs_nm": "長田川（直海）",
+   "pref": "ishikawa",
+   "max": 27.45,
+   "at": "2026/10/21 05:10",
+   "lv": 5,
+   "lv_name": "氾濫開始/計画高水位"
+  },
+  "over_warn": 38,
+  "over_danger": 9,
+  "flooded": 3,
+  "flooded_names": [
+   "三引川（降橋）",
+   "衣川（衣川橋）",
+   "長田川（直海）"
+  ],
+  "cameras": 0,
+  "camera_images": 0,
+  "period": {
+   "from": "2026/10/19 00:00",
+   "to": "2026/10/25 05:40"
+  }
  }
 ]
