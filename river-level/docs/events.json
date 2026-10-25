@@ -32,7 +32,7 @@
   "since": "2026/10/25 05:50",
   "trigger": "alert",
   "until": null,
-  "last_fetch": "2026/10/26 01:10",
+  "last_fetch": "2026/10/26 04:05",
   "max_station": {
    "obs_id": "1700000094",
    "obs_nm": "長田川（直海）",
