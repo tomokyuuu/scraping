@@ -56,5 +56,30 @@
    "from": "2026/10/19 00:00",
    "to": "2026/10/28 17:10"
   }
+ },
+ {
+  "since": "2026/10/30 05:27",
+  "trigger": "alert",
+  "until": null,
+  "last_fetch": "2026/10/30 05:27",
+  "max_station": {
+   "obs_id": "1700000056",
+   "obs_nm": "磐若川（磐若橋）",
+   "pref": "ishikawa",
+   "max": 1.04,
+   "at": "2026/10/25 13:10",
+   "lv": 4,
+   "lv_name": "氾濫危険"
+  },
+  "over_warn": 8,
+  "over_danger": 2,
+  "flooded": 0,
+  "flooded_names": [],
+  "cameras": 0,
+  "camera_images": 0,
+  "period": {
+   "from": "2026/10/24 00:00",
+   "to": "2026/10/30 05:20"
+  }
  }
 ]
