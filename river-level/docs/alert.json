@@ -1,1 +1,1 @@
-{"checked": "2026/11/02 14:52", "field": "warn_stg", "over": [{"kind": "stg", "obs_id": "0435300400154", "obs_nm": "瑞穂橋", "pref": "ishikawa", "stg": 1.15, "thr": 1.1, "obs_time": "2026/11/02 14:40"}]}
+{"checked": "2026/11/03 00:37", "field": "warn_stg", "over": [{"kind": "stg", "obs_id": "0435300400154", "obs_nm": "瑞穂橋", "pref": "ishikawa", "stg": 1.12, "thr": 1.1, "obs_time": "2026/11/03 00:20"}, {"kind": "stg", "obs_id": "0435300400166", "obs_nm": "多喜尾橋", "pref": "ishikawa", "stg": 0.9, "thr": 0.8, "obs_time": "2026/11/03 00:20"}]}

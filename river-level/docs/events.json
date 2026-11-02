@@ -61,25 +61,27 @@
   "since": "2026/10/30 05:27",
   "trigger": "alert",
   "until": null,
-  "last_fetch": "2026/11/02 14:58",
+  "last_fetch": "2026/11/03 00:44",
   "max_station": {
-   "obs_id": "1700000056",
-   "obs_nm": "磐若川（磐若橋）",
-   "pref": "ishikawa",
-   "max": 1.04,
-   "at": "2026/10/25 13:10",
-   "lv": 4,
-   "lv_name": "氾濫危険"
+   "obs_id": "1600000048",
+   "obs_nm": "桑院川　触坂",
+   "pref": "toyama",
+   "max": 40.31,
+   "at": "2026/10/29 12:10",
+   "lv": 5,
+   "lv_name": "氾濫開始/計画高水位"
   },
-  "over_warn": 8,
-  "over_danger": 2,
-  "flooded": 0,
-  "flooded_names": [],
+  "over_warn": 9,
+  "over_danger": 3,
+  "flooded": 1,
+  "flooded_names": [
+   "桑院川　触坂"
+  ],
   "cameras": 0,
   "camera_images": 0,
   "period": {
    "from": "2026/10/24 00:00",
-   "to": "2026/11/02 14:40"
+   "to": "2026/11/03 00:30"
   }
  }
 ]
