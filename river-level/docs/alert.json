@@ -1,1 +1,1 @@
-{"checked": "2026/11/05 15:32", "field": "warn_stg", "over": []}
+{"checked": "2026/11/06 00:24", "field": "warn_stg", "over": [{"kind": "stg", "obs_id": "0435300400166", "obs_nm": "多喜尾橋", "pref": "ishikawa", "stg": 0.81, "thr": 0.8, "obs_time": "2026/11/06 00:10"}]}
