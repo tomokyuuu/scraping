@@ -84,6 +84,7 @@
     </select>
     <button id="btnEvents">出水記録</button>
     <button id="btnLedger">Drive台帳</button>
+    <button id="btnOfficial">公的資料</button>
     <a id="dataLink" href="#" target="_blank" rel="noopener">保存先（Drive）</a>
     <a href="https://www.river.go.jp/" target="_blank" rel="noopener">出典: 川の防災情報</a>
     <button id="btnLogin" title="合言葉を忘れてログアウト">🔓</button>
@@ -457,6 +458,176 @@ function flyTo(id) {
   const m = markers.find(m => { const ll = m.getLngLat(); return ll.lng === f.geometry.coordinates[0] && ll.lat === f.geometry.coordinates[1]; });
   if (m) m.togglePopup();
 }
+
+// ---- 公的資料（国土地理院が災害対応で公開した、位置つきの写真・図）----
+// 一覧は地理院地図のレイヤ定義（layers6.txt → 災害ごとの layers_*.txt）から読む。画像は保存せず、URL だけ扱う。
+// 「見る」で地図に重ねて確認 →「採用」したものだけ Drive の official/adopted.json に記録して以後使う。
+const GSI_CAT = "https://maps.gsi.go.jp/layers_txt/";
+const AREA_BOX = { latMin: 36.0, latMax: 37.7, lngMin: 136.0, lngMax: 137.9 };  // 石川・富山
+let official = {};          // 採用／不採用の記録 {id: {event, group, title, url, ..., state, decided}}
+let officialFound = [];     // 直近の検索結果
+let officialMsg = "";
+let showRejected = false;
+const offById = {};         // id -> レイヤ定義
+const overlays = new Map(); // 地図に重ねているもの id -> レイヤ定義
+const overlayClickBound = new Set();
+
+const inBox = a => a && a.lat >= AREA_BOX.latMin && a.lat <= AREA_BOX.latMax && a.lng >= AREA_BOX.lngMin && a.lng <= AREA_BOX.lngMax;
+
+async function gsiSearch() {
+  const cat = await (await fetch(GSI_CAT + "layers6.txt")).json();
+  const events = cat.layers[0].entries.filter(g => /台風|豪雨/.test(g.title)).flatMap(g => g.entries ?? []).filter(e => e.src);
+  const loaded = await Promise.all(events.map(async ev => {
+    try { return { ev, d: await (await fetch(GSI_CAT + ev.src.replace("./", ""))).json() }; } catch (e) { return null; }
+  }));
+  const out = [];
+  for (const x of loaded) {
+    if (!x) continue;
+    const flat = [];
+    const walk = (n, path) => {
+      if (n.entries) n.entries.forEach(c => walk(c, n.title ? [...path, n.title] : path));
+      else if (n.url && n.id) flat.push({ id: n.id, event: x.ev.title, group: path.join(" / "), title: n.title, url: n.url,
+        minZoom: n.minZoom ?? null, maxZoom: n.maxZoom ?? null, maxNativeZoom: n.maxNativeZoom ?? null, area: n.area ?? null });
+    };
+    (x.d.layers ?? []).forEach(l => walk(l, []));
+    // 石川・富山に中心がある資料を1つでも含む災害だけ。その災害の、位置指定が無い資料（分布図など）も一緒に出す
+    if (flat.some(l => inBox(l.area))) out.push(...flat.filter(l => inBox(l.area) || !l.area));
+  }
+  return out;
+}
+
+function tileXY(lat, lng, z) {
+  const n = 2 ** z, r = lat * Math.PI / 180;
+  return [Math.floor((lng + 180) / 360 * n), Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n)];
+}
+
+async function addOverlay(l) {
+  const sid = "ov-" + l.id;
+  overlays.set(l.id, l);
+  if (map.getSource(sid)) return;
+  if (/\.(png|jpe?g)$/i.test(l.url)) {
+    map.addSource(sid, { type: "raster", tiles: [l.url], tileSize: 256, minzoom: l.minZoom ?? 2,
+      maxzoom: l.maxNativeZoom ?? l.maxZoom ?? 18, attribution: "国土地理院" });
+    map.addLayer({ id: sid, type: "raster", source: sid, paint: { "raster-opacity": 0.85 } });
+    return;
+  }
+  // 地理院の「タイル状 GeoJSON」。maxNativeZoom（多くは 2）の1枚に全部入っている
+  const z = l.maxNativeZoom ?? l.minZoom ?? 2;
+  const c = l.area ?? { lat: 36.9, lng: 136.9 };
+  const [x, y] = tileXY(c.lat, c.lng, z);
+  const gj = await (await fetch(l.url.replace("{z}", z).replace("{x}", x).replace("{y}", y))).json();
+  if (map.getSource(sid)) return;
+  map.addSource(sid, { type: "geojson", data: gj, attribution: "国土地理院" });
+  map.addLayer({ id: sid + "-fill", type: "fill", source: sid, filter: ["==", "$type", "Polygon"],
+    paint: { "fill-color": ["coalesce", ["get", "_fillColor"], "#ff3232"], "fill-opacity": 0.45 } });
+  map.addLayer({ id: sid + "-line", type: "line", source: sid, filter: ["!=", "$type", "Point"],
+    paint: { "line-color": ["coalesce", ["get", "_color"], "#ff0000"], "line-width": 1 } });
+  map.addLayer({ id: sid + "-pt", type: "circle", source: sid, filter: ["==", "$type", "Point"],
+    paint: { "circle-radius": 5, "circle-color": "#ff8c00", "circle-stroke-color": "#fff", "circle-stroke-width": 1 } });
+  if (!overlayClickBound.has(sid)) {
+    overlayClickBound.add(sid);
+    map.on("click", sid + "-pt", e => {
+      const p = e.features[0].properties;
+      const rows = Object.entries(p).filter(([k]) => !k.startsWith("_") && k !== "name").map(([k, v]) => `<div><small>${k}</small> ${v}</div>`).join("");
+      new maplibregl.Popup({ maxWidth: "340px" }).setLngLat(e.lngLat)
+        .setHTML(`<b>${p.name ?? l.title}</b> <small>${l.event}・国土地理院</small>${rows}`).addTo(map);
+    });
+    map.on("mouseenter", sid + "-pt", () => { map.getCanvas().style.cursor = "pointer"; });
+    map.on("mouseleave", sid + "-pt", () => { map.getCanvas().style.cursor = ""; });
+  }
+}
+
+function removeOverlay(id) {
+  const sid = "ov-" + id;
+  [sid, sid + "-fill", sid + "-line", sid + "-pt"].forEach(x => { if (map.getLayer(x)) map.removeLayer(x); });
+  if (map.getSource(sid)) map.removeSource(sid);
+  overlays.delete(id);
+}
+
+async function offView(id) {
+  const l = offById[id];
+  if (!l) return;
+  try { await addOverlay(l); } catch (e) { window.alert("読み込めませんでした: " + e); return; }
+  if (l.area) map.flyTo({ center: [l.area.lng, l.area.lat], zoom: Math.max(l.area.zoom ?? 12, l.minZoom ?? 0) });
+  renderOfficial();
+}
+function offHide(id) { removeOverlay(id); renderOfficial(); }
+async function offSet(id, state) {
+  const l = offById[id] ?? {};
+  const data = { event: l.event, group: l.group, title: l.title, url: l.url, minZoom: l.minZoom, maxZoom: l.maxZoom, maxNativeZoom: l.maxNativeZoom, area: l.area };
+  officialMsg = "保存中…"; renderOfficial();
+  try {
+    const r = await (await fetch(`${API_URL}?official=set&id=${encodeURIComponent(id)}&state=${state}&data=${encodeURIComponent(JSON.stringify(data))}&pw=${encodeURIComponent(pw)}`)).json();
+    if (r.ok) { official = r.items; officialMsg = ""; } else officialMsg = "保存できません: " + r.error;
+  } catch (e) { officialMsg = "保存失敗: " + e; }
+  if (state !== "adopted" && overlays.has(id)) removeOverlay(id);
+  renderOfficial();
+}
+
+function offRow(l, decided) {
+  const on = overlays.has(l.id);
+  const kind = /\.(png|jpe?g)$/i.test(l.url) ? "画像" : "位置・範囲";
+  const st = decided?.state;
+  const badge = st === "adopted" ? `<b style="color:#2e8b57">採用</b>` : st === "rejected" ? `<span style="color:var(--muted)">不採用</span>` : "";
+  return `<tr><td>${l.group ? `<small>${l.group}</small><br>` : ""}${l.title} <small>${kind}</small> ${badge}</td>
+    <td style="white-space:nowrap;text-align:right">
+      ${on ? `<button onclick="offHide('${l.id}')">消す</button>` : `<button onclick="offView('${l.id}')">見る</button>`}
+      ${st === "adopted" ? `<button onclick="offSet('${l.id}','clear')">採用をやめる</button>`
+        : `<button onclick="offSet('${l.id}','adopted')">採用</button>${st === "rejected" ? `<button onclick="offSet('${l.id}','clear')">戻す</button>` : `<button onclick="offSet('${l.id}','rejected')">不採用</button>`}`}
+    </td></tr>`;
+}
+
+function renderOfficial() {
+  if (!panel.classList.contains("show") || panelTitle.textContent !== "公的資料") return;
+  Object.entries(official).forEach(([id, d]) => { if (!offById[id]) offById[id] = { id, ...d }; });
+  const adopted = Object.entries(official).filter(([, d]) => d.state === "adopted");
+  const byEvent = list => { const m = new Map(); list.forEach(l => { if (!m.has(l.event)) m.set(l.event, []); m.get(l.event).push(l); }); return m; };
+  let html = `<div style="margin-bottom:8px"><small>国土地理院が災害対応で公開した、位置のついた空中写真・斜め写真・分布図など（石川・富山にかかるもの）。
+    「見る」で地図に重ねて確認し、使うものだけ「採用」する。画像は保存せずリンクのみ。現地調査の写真とは別物（出典: 国土地理院）。</small></div>
+    <div style="margin-bottom:8px"><button onclick="offSearch()">国土地理院を検索</button> <small>${officialMsg}</small></div>`;
+  html += `<div style="font-weight:600;margin:6px 0 2px">採用済み（${adopted.length}）</div>`;
+  if (adopted.length) {
+    for (const [ev, ls] of byEvent(adopted.map(([id, d]) => ({ id, ...d })))) {
+      html += `<div style="margin-top:4px"><small style="color:var(--muted)">${ev}</small></div><table style="width:100%;border-collapse:collapse">${ls.map(l => offRow(l, official[l.id])).join("")}</table>`;
+    }
+  } else html += `<div><small>まだありません</small></div>`;
+  if (officialFound.length) {
+    const fresh = officialFound.filter(l => official[l.id]?.state !== "adopted" && (showRejected || official[l.id]?.state !== "rejected"));
+    const nRej = officialFound.filter(l => official[l.id]?.state === "rejected").length;
+    html += `<div style="font-weight:600;margin:12px 0 2px">検索結果（未決定 ${officialFound.filter(l => !official[l.id]).length} 件）
+      ${nRej ? `<label style="font-weight:400;margin-left:8px"><input type="checkbox" ${showRejected ? "checked" : ""} onchange="showRejected=this.checked;renderOfficial()"> 不採用 ${nRej} 件も表示</label>` : ""}</div>`;
+    for (const [ev, ls] of byEvent(fresh)) {
+      html += `<div style="margin-top:6px"><b>${ev}</b></div><table style="width:100%;border-collapse:collapse">${ls.map(l => offRow(l, official[l.id])).join("")}</table>`;
+    }
+    if (!fresh.length) html += `<div><small>未決定の資料はありません</small></div>`;
+  }
+  panelBody.innerHTML = html;
+}
+
+async function offSearch() {
+  officialMsg = "国土地理院に問い合わせ中…"; renderOfficial();
+  try {
+    officialFound = await gsiSearch();
+    officialFound.forEach(l => { offById[l.id] = l; });
+    officialMsg = `${new Set(officialFound.map(l => l.event)).size} 件の災害、${officialFound.length} 件の資料`;
+  } catch (e) { officialMsg = "検索失敗: " + e; }
+  renderOfficial();
+}
+
+btnOfficial.onclick = async () => {
+  openPanel("公的資料", "<div>読み込み中…</div>");
+  try {
+    const r = await (await fetch(`${API_URL}?official=list&pw=${encodeURIComponent(pw)}`)).json();
+    if (r.ok) official = r.items ?? {};
+  } catch (e) { officialMsg = "採用記録を読めません: " + e; }
+  renderOfficial();
+};
+
+// 地図の種類を替えると重ねたものが消えるので、付け直す
+base.addEventListener("change", () => map.once("style.load", () => {
+  const ls = [...overlays.values()];
+  ls.forEach(l => addOverlay(l).catch(() => {}));
+}));
 
 // 凡例をドラッグで移動。位置はこのブラウザに記憶する
 (function () {

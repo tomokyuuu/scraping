@@ -20,6 +20,9 @@
  *   ?auth=1&pw=...                        合言葉の確認
  *   ?tree=1&pw=...                        フォルダ構成（データ台帳）
  *   ?series=<src>&id=<obs_id>&pw=...      1観測所の時系列（series/<src>.json から切り出す）
+ *   ?ls=<path>&pw=...                     フォルダ1階層ぶん（"/" がルート）
+ *   ?official=list&pw=...                 公的資料の採用記録
+ *   ?official=set&id=..&state=adopted|rejected|clear&data=<json>&pw=...  採用／不採用を記録
  */
 function doPost(e) {
   try {
@@ -76,7 +79,7 @@ function testMail() {
 function doGet(e) {
   try {
     var p = (e && e.parameter) || {};
-    if (p.auth || p.tree || p.series || p.ls !== undefined) {
+    if (p.auth || p.tree || p.series || p.official || p.ls !== undefined) {
       // 合言葉（スクリプトプロパティ VIEW_PASSWORD）。運用情報は合言葉を知っている人だけに返す
       var want = PropertiesService.getScriptProperties().getProperty("VIEW_PASSWORD");
       if (!want || String(p.pw || "") !== want) return reply_({ ok: false, error: "bad password" });
@@ -91,6 +94,24 @@ function doGet(e) {
       return reply_({ ok: true, root: root_().getUrl(), tree: tree_(folder, 3) });
     }
     if (p.series) return reply_(series_(String(p.series), String(p.id || "")));
+    if (p.official === "list") return reply_({ ok: true, items: officialRead_() });
+    if (p.official === "set") {
+      // 公的資料（国土地理院の災害対応レイヤ）の採用／不採用を記録する。official/adopted.json に id ごとに保存
+      var id = String(p.id || "");
+      if (!/^[0-9A-Za-z_.-]{1,120}$/.test(id)) return reply_({ ok: false, error: "bad id" });
+      var items = officialRead_();
+      if (p.state === "clear") {
+        delete items[id];
+      } else {
+        var data = {};
+        try { data = JSON.parse(String(p.data || "{}")); } catch (e2) { data = {}; }
+        data.state = p.state === "adopted" ? "adopted" : "rejected";
+        data.decided = Utilities.formatDate(new Date(), "Asia/Tokyo", "yyyy/MM/dd HH:mm");
+        items[id] = data;
+      }
+      officialWrite_(items);
+      return reply_({ ok: true, items: items });
+    }
     return reply_({ ok: true, message: "river-level endpoint" });
   } catch (err) {
     return reply_({ ok: false, error: String(err) });
@@ -99,6 +120,25 @@ function doGet(e) {
 
 function root_() {
   return DriveApp.getFolderById(PropertiesService.getScriptProperties().getProperty("ROOT_FOLDER_ID"));
+}
+
+// 公的資料の採用記録（Drive の official/adopted.json）。中身は {id: {event, title, url, ..., state, decided}}
+function officialFile_(create) {
+  var folder = subfolder_(root_(), ["official"], create);
+  if (!folder) return null;
+  var it = folder.getFilesByName("adopted.json");
+  if (it.hasNext()) return it.next();
+  return create ? folder.createFile("adopted.json", "{}", "application/json") : null;
+}
+
+function officialRead_() {
+  var f = officialFile_(false);
+  if (!f) return {};
+  try { return JSON.parse(f.getBlob().getDataAsString("UTF-8")) || {}; } catch (e) { return {}; }
+}
+
+function officialWrite_(items) {
+  officialFile_(true).setContent(JSON.stringify(items, null, 1));
 }
 
 function subfolder_(folder, parts, create) {
