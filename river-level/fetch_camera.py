@@ -11,13 +11,14 @@ data/camera_check.json（目視確認の結果）で「取得不可・メンテ�
   詳細  : /kawabou/file/files/master/obs/scam/{scamId}.json（lat/lon, currProvUrl, currDateProvUrl）
 画像  : https://cam.river.go.jp/cam/now/{scamId}.jpg  時刻: 同 .json の get_time（約10分ごと更新）
 
-初めて対象になったカメラは、履歴 https://cam.river.go.jp/cam/history/{YYYYMMDDHHmm}/{scamId}.jpg（約30日保持）から
-過去 CAM_BACKFILL_HOURS 時間（既定48）を遡って取る。近くのカメラは10分刻み、同じ川の他は CAM_BACKFILL_RIVER_STEP 分刻み（既定30）。
-遡った分は枚数が多いので日ごとの zip（backfill_{YYYYMMDD}.zip）にまとめる。
+画像はリアルタイムではなく履歴 https://cam.river.go.jp/cam/history/{YYYYMMDDHHmm}/{scamId}.jpg（約30日保持）から取る。
+初回は過去 CAM_BACKFILL_HOURS 時間（既定48）、以後は実行のたびに「前回取ったところから今まで」を埋めるので、
+ジョブの実行間隔が何時間空いても画像は途切れない（GitHub の定時実行は数時間遅れることがある）。
+近くのカメラは10分刻み、同じ川の他は CAM_BACKFILL_RIVER_STEP 分刻み（既定30）。日ごとの zip（hist_{YYYYMMDD}_{実行時刻}.zip）にまとめる。
+対象は「今 超えている」か「直近 CAM_BACKFILL_HOURS 時間の最大水位が超えていた」観測所（走った時点で下がっていても拾う）。
 
 出力:
-  data/camera/{scamId}/{YYYYMMDD_HHMM}.jpg   画像（同じ get_time のものは撮り直さない）
-  data/camera/{scamId}/backfill_{YYYYMMDD}.zip  遡って取った画像
+  data/camera/{scamId}/hist_{YYYYMMDD}_{HHMM}.zip  画像（中身は {YYYYMMDD_HHMM}.jpg）
   docs/camera_index.json                     どのカメラを何枚撮ったか（地図のポップアップ用）
   docs/station_cameras.json                  観測所 → 近くのカメラ の対応表（--build で作り直し。地図にも使う）
 """
@@ -176,39 +177,66 @@ def load_mapping(cams: list[dict]) -> dict[str, dict]:
 
 
 def target_stations() -> list[dict]:
+    """カメラを撮る対象の観測所。今 CAM_FIELD 以上のもの、または直近 BACKFILL_HOURS 時間の最大水位が超えていたもの
+    （ジョブの実行間隔が空いて、走った時点ではもう水位が下がっている場合の見逃し防止。peak.json を使う）。"""
     geo = json.loads((DOCS / "latest.geojson").read_text(encoding="utf-8"))
+    peak_path = DOCS / "peak.json"
+    peaks = json.loads(peak_path.read_text(encoding="utf-8")).get("peaks", {}) if peak_path.exists() else {}
+    recent = datetime.now() - timedelta(hours=BACKFILL_HOURS)
     out = []
     for f in geo["features"]:
         p = f["properties"]
         stg, thr = p.get("stg"), p.get(CAM_FIELD)
-        if stg is not None and not p.get("stg_ccd") and thr is not None and stg >= thr:
+        if thr is None:
+            continue
+        now_over = stg is not None and not p.get("stg_ccd") and stg >= thr
+        pk = peaks.get(p["obs_id"])
+        peak_over = False
+        if pk and pk.get("max") is not None and pk["max"] >= thr:
+            try:
+                peak_over = datetime.strptime(pk["at"], "%Y/%m/%d %H:%M") >= recent
+            except (ValueError, KeyError):
+                peak_over = False
+        if now_over or peak_over:
             out.append({**p, "lon": f["geometry"]["coordinates"][0], "lat": f["geometry"]["coordinates"][1]})
     return out
 
 
-def backfill(sid: str, c: dict, step_min: int) -> int:
-    """過去 BACKFILL_HOURS 時間の履歴画像を step_min 刻みで取り、日ごとの zip にまとめる。
-    履歴: https://cam.river.go.jp/cam/history/{YYYYMMDDHHmm}/{scamId}.jpg（約30日保持。簡易型は5分、CCTV は10分刻み）"""
+def fill_history(sid: str, c: dict, step_min: int, since: datetime | None) -> tuple[int, datetime]:
+    """履歴画像を「前回取ったところ（since）から今まで」埋める。初回は過去 BACKFILL_HOURS 時間。
+    ジョブの実行間隔が何時間空いても、step_min 刻みの画像が途切れなく揃う。
+    履歴: https://cam.river.go.jp/cam/history/{YYYYMMDDHHmm}/{scamId}.jpg（約30日保持。簡易型は5分、CCTV は10分刻み）
+    戻り値は (取れた枚数, ここまで取った時刻)。zip は実行ごとに別名（Drive 側は同名を上書きしないため）。"""
     now = datetime.now().replace(second=0, microsecond=0)
-    t = now - timedelta(minutes=now.minute % 10)
-    start = t - timedelta(hours=BACKFILL_HOURS)
+    end = now - timedelta(minutes=now.minute % 10)
+    oldest = end - timedelta(hours=BACKFILL_HOURS)
+    start = max(since, oldest) if since else oldest
     out_dir = DATA / "camera" / sid
     out_dir.mkdir(parents=True, exist_ok=True)
     zips: dict[str, zipfile.ZipFile] = {}
     n = 0
-    while t > start:
-        t -= timedelta(minutes=step_min)
-        img = get(f"{CAM_HISTORY}{t:%Y%m%d%H%M}/{sid}.jpg")
-        if img and len(img) >= 1000:
+    t = start
+    last_ok = None
+    # 履歴のファイル名は現在画像と同じ（簡易型は {scamId}.jpg、国の CCTV は cctv_xxx.jpg）
+    fname = c["img_url"].rsplit("/", 1)[-1]
+    while t < end:
+        t += timedelta(minutes=step_min)
+        img = get(f"{CAM_HISTORY}{t:%Y%m%d%H%M}/{fname}")
+        if img and len(img) >= 1000 and img[:2] == bytes([0xFF, 0xD8]):  # JPEG のみ（取得不可のときは PNG の定型画像が返る）
+            last_ok = t
             day = t.strftime("%Y%m%d")
             if day not in zips:
-                zips[day] = zipfile.ZipFile(out_dir / f"backfill_{day}.zip", "a", zipfile.ZIP_STORED)
+                zips[day] = zipfile.ZipFile(out_dir / f"hist_{day}_{now:%H%M}.zip", "a", zipfile.ZIP_STORED)
             zips[day].writestr(f"{t:%Y%m%d_%H%M}.jpg", img)
             n += 1
     for z in zips.values():
         z.close()
-    print(f"camera backfill {sid} {c['name']}: {n} images ({BACKFILL_HOURS}h, {step_min}min step)")
-    return n
+    print(f"camera {sid} {c['name']}: {n} images ({start:%m/%d %H:%M} -> {end:%m/%d %H:%M}, {step_min}min step)")
+    # 最新の枠はまだ履歴に出ていないことがあるので、「最後に取れた時刻」までを取得済みとする。
+    # 1枚も取れないカメラは2時間ぶんだけ次回やり直す（毎回48時間を取り直さないため）
+    floor = end - timedelta(hours=2)
+    until = max(last_ok, floor) if last_ok else max(start, floor)
+    return n, min(until, end)
 
 
 def main(build: bool) -> None:
@@ -234,38 +262,22 @@ def main(build: bool) -> None:
     index = json.loads(INDEX.read_text(encoding="utf-8")) if INDEX.exists() else {}
     saved = 0
     for sid, c in picked.items():
-        # 初めて対象になったカメラは過去の画像を遡って取る（近くのカメラは10分刻み、同じ川の他は30分刻み）
-        if sid not in index or not index[sid].get("backfilled"):
-            n = backfill(sid, c, 10 if c["near"] else BACKFILL_RIVER_STEP)
-            index.setdefault(sid, {"name": c["name"], "kind": c["kind"], "lat": c["lat"], "lon": c["lon"],
-                                   "img_url": c["img_url"], "count": 0, "shots": []})
-            index[sid]["backfilled"] = datetime.now().strftime("%Y/%m/%d %H:%M")
-            index[sid]["backfill_images"] = n
-        tinfo = {}
-        if c.get("time_url"):
-            b = get(c["time_url"])
-            if b:
-                try:
-                    tinfo = json.loads(b.decode("utf-8"))
-                except ValueError:
-                    tinfo = {}
-        get_time = (tinfo.get("get_time") or datetime.now().isoformat())[:16]  # "2026-10-22T09:25"
-        stamp = get_time.replace("-", "").replace("T", "_").replace(":", "")
         entry = index.setdefault(sid, {"name": c["name"], "kind": c["kind"], "lat": c["lat"], "lon": c["lon"],
-                                       "img_url": c["img_url"], "count": 0, "shots": []})
+                                       "img_url": c["img_url"], "count": 0})
         entry["stations"] = c["stations"]
-        if entry.get("last_time") == get_time:
-            continue  # 画像が更新されていない
-        img = get(c["img_url"])
-        if not img or len(img) < 1000:
-            continue
-        path = DATA / "camera" / sid / f"{stamp}.jpg"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(img)
-        entry["last_time"] = get_time
-        entry["count"] = entry.get("count", 0) + 1
-        entry["shots"] = (entry.get("shots") or [])[-47:] + [stamp]  # 直近48枚ぶんの名前だけ持つ
-        saved += 1
+        since = None
+        if entry.get("covered_until"):
+            try:
+                since = datetime.strptime(entry["covered_until"], "%Y/%m/%d %H:%M")
+            except ValueError:
+                since = None
+        if not entry.get("backfilled"):
+            entry["backfilled"] = datetime.now().strftime("%Y/%m/%d %H:%M")  # この出水で最初に取った時刻（出水記録用）
+        n, until = fill_history(sid, c, 10 if c["near"] else BACKFILL_RIVER_STEP, since)
+        entry["covered_until"] = until.strftime("%Y/%m/%d %H:%M")
+        entry["last_time"] = entry["covered_until"]
+        entry["count"] = (entry.get("count") or 0) + n
+        saved += n
     index["_updated"] = datetime.now().strftime("%Y/%m/%d %H:%M")
     INDEX.write_text(json.dumps(index, ensure_ascii=False), encoding="utf-8")
     print(f"camera: {saved} images saved")

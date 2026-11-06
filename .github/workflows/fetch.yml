@@ -82,9 +82,10 @@ jobs:
           python fetch_river_level.py --days $D
           python fetch_toyama_city.py --days $D
           python fetch_jma_tide.py --days $D
+          python peak.py
+          python notify.py
           python fetch_camera.py
           python upload_drive.py
-          python peak.py
           python update_status.py fetched $D ${{ steps.decide.outputs.trigger }}
 
       - name: 取得状況を更新
