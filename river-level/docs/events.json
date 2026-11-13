@@ -108,5 +108,30 @@
    "from": "2026/10/31 00:00",
    "to": "2026/11/08 01:10"
   }
+ },
+ {
+  "since": "2026/11/14 01:24",
+  "trigger": "alert",
+  "until": null,
+  "last_fetch": "2026/11/14 01:24",
+  "max_station": {
+   "obs_id": "1700000137",
+   "obs_nm": "折戸川（山田橋）",
+   "pref": "ishikawa",
+   "max": 3.87,
+   "at": "2026/11/10 13:00",
+   "lv": 4,
+   "lv_name": "氾濫危険"
+  },
+  "over_warn": 4,
+  "over_danger": 3,
+  "flooded": 0,
+  "flooded_names": [],
+  "cameras": 0,
+  "camera_images": 0,
+  "period": {
+   "from": "2026/11/08 00:00",
+   "to": "2026/11/14 01:20"
+  }
  }
 ]
