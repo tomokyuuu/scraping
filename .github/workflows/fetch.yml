@@ -8,6 +8,7 @@ on:
       - ".github/workflows/fetch.yml"
       - "river-level/*.py"
       - "river-level/docs/index.html"
+      - "river-level/docs/toyama/**"
       - "river-level/docs/icon.*"
   schedule:
     # 毎時: 最新値で地図を更新。氾濫注意水位以上の観測所があれば直近1週間の10分値を Drive に保存
