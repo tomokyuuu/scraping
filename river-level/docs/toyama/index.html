@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>🌊 観測サイト</title>
+<link rel="icon" href="../icon.png">
+<link rel="apple-touch-icon" href="../icon.png">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+  :root { --bg: #fff; --fg: #222; --panel: rgba(255,255,255,.95); --line: #ddd; --accent: #1f5fbf; --muted: #777; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1b1d21; --fg: #eee; --panel: rgba(32,34,38,.95); --line: #444; --accent: #7cb0ff; --muted: #aaa; }
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font-family: system-ui, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif; }
+  #map { position: absolute; inset: 0; }
+  #head { position: absolute; top: 0; left: 0; right: 0; z-index: 2; padding: 6px 16px; background: var(--panel);
+    border-bottom: 1px solid var(--line); font-size: 14px; display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
+  #head h1 { font-size: 16px; margin: 0 8px 0 0; }
+  #head a { color: var(--accent); }
+  button, select { font: inherit; font-size: 13px; padding: 2px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer; }
+  #side { position: absolute; top: 48px; left: 10px; z-index: 2; width: 300px; max-height: calc(100vh - 60px); overflow: auto;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 13px; box-shadow: 0 4px 16px #0003; }
+  #side h2 { font-size: 13px; margin: 10px 0 4px; color: var(--muted); font-weight: 600; }
+  #side label { display: flex; align-items: center; gap: 6px; line-height: 1.9; cursor: pointer; }
+  #side label small { color: var(--muted); }
+  #side .legend { margin: 2px 0 6px 22px; }
+  #side .legend img { max-width: 240px; display: block; border: 1px solid var(--line); background: #fff; }
+  #side input[type=range] { width: 120px; vertical-align: middle; }
+  #sideToggle { position: absolute; top: 48px; left: 10px; z-index: 3; display: none; }
+  .maplibregl-popup-content { color: #222; font-size: 13px; line-height: 1.6; }
+  #gate { position: fixed; inset: 0; z-index: 10; background: var(--bg); display: flex; align-items: center; justify-content: center; }
+  #gate .box { padding: 24px; text-align: center; line-height: 1.8; }
+  #gate input { font: inherit; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; width: 180px; }
+  body.auth #gate { display: none; }
+  #head, #side, #map { visibility: hidden; }
+  body.auth #head, body.auth #side, body.auth #map { visibility: visible; }
+  @media (max-width: 700px) { #side { width: calc(100vw - 20px); max-height: 45vh; } }
+</style>
+</head>
+<body>
+<div id="gate">
+  <div class="box">
+    <div style="font-size:22px;margin-bottom:10px">🌊 観測サイト</div>
+    <form id="gateForm"><input type="password" id="gatePw" autocomplete="current-password" aria-label="password"> <button type="submit">→</button></form>
+    <div id="gateMsg" style="color:#c00;font-size:13px;min-height:1.4em"></div>
+  </div>
+</div>
+<div id="head">
+  <h1>富山 ハザードマップ</h1>
+  <select id="base">
+    <option value="gsi-pale">地理院 淡色</option>
+    <option value="gsi-std">地理院 標準</option>
+    <option value="gsi-photo">航空写真</option>
+    <option value="osm">OpenStreetMap</option>
+  </select>
+  <button id="btnSide">レイヤ</button>
+  <a href="../" title="石川・富山 河川水位">河川水位の地図へ</a>
+  <a href="https://disaportal.gsi.go.jp/" target="_blank" rel="noopener">出典: 重ねるハザードマップ（国土交通省）</a>
+  <button id="btnLogin" title="合言葉を忘れてログアウト">🔓</button>
+</div>
+<div id="map"></div>
+<div id="side"></div>
+<script>
+const API_URL = "https://script.google.com/macros/s/AKfycbz45llyadCop21B1jEulhERWJw13LyrJMVpZvgzt5v26xK5uqBaE-QWsibhmldYyAS5/exec";
+const TILES = {
+  "gsi-pale": ["https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png", "地図:国土地理院"],
+  "gsi-std": ["https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png", "地図:国土地理院"],
+  "gsi-photo": ["https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg", "地図:国土地理院"],
+  "osm": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png", "&copy; OpenStreetMap contributors"],
+};
+// 重ねるハザードマップ（国土交通省）の配信タイル。https://disaportal.gsi.go.jp/hazardmap/copyright/opendata.html
+const HZ = "https://disaportaldata.gsi.go.jp/raster/";
+const LEG = "https://disaportal.gsi.go.jp/hazardmap/copyright/img/";
+const GROUPS = [
+  { name: "洪水（河川の氾濫）", layers: [
+    { id: "flood_l2", title: "洪水浸水想定区域（想定最大規模）", url: HZ + "01_flood_l2_shinsuishin_data/{z}/{x}/{y}.png", minzoom: 2, maxzoom: 17, legend: LEG + "shinsui_legend3.png", on: true },
+    { id: "flood_l1", title: "洪水浸水想定区域（計画規模）", url: HZ + "01_flood_l1_shinsuishin_newlegend_data/{z}/{x}/{y}.png", minzoom: 2, maxzoom: 17, legend: LEG + "shinsui_legend3.png" },
+    { id: "keizoku", title: "浸水継続時間（想定最大規模）", url: HZ + "01_flood_l2_keizoku_data/{z}/{x}/{y}.png", minzoom: 2, maxzoom: 17, legend: LEG + "shinsui_legend_l2_keizoku.png" },
+    { id: "kaoku_hanran", title: "家屋倒壊等氾濫想定区域（氾濫流）", url: HZ + "01_flood_l2_kaokutoukai_hanran_data/{z}/{x}/{y}.png", minzoom: 4, maxzoom: 17, legend: LEG + "kaokutoukai_hanran.png" },
+    { id: "kaoku_kagan", title: "家屋倒壊等氾濫想定区域（河岸侵食）", url: HZ + "01_flood_l2_kaokutoukai_kagan_data/{z}/{x}/{y}.png", minzoom: 4, maxzoom: 17, legend: LEG + "kaokutoukai_kagan.png" },
+  ]},
+  { name: "内水（雨水出水）", layers: [
+    { id: "naisui", title: "内水浸水想定区域", url: HZ + "02_naisui_data/{z}/{x}/{y}.png", minzoom: 2, maxzoom: 17, legend: LEG + "naisui_legend.png", note: "作成済みの市町村のみ" },
+  ]},
+  { name: "高潮・津波", layers: [
+    { id: "hightide", title: "高潮浸水想定区域", url: HZ + "03_hightide_l2_shinsuishin_data/{z}/{x}/{y}.png", minzoom: 2, maxzoom: 17, legend: LEG + "shinsui_legend3.png", note: "未作成の県もある" },
+    { id: "tsunami", title: "津波浸水想定", url: HZ + "04_tsunami_newlegend_data/{z}/{x}/{y}.png", minzoom: 2, maxzoom: 17, legend: LEG + "shinsui_legend3.png" },
+  ]},
+  { name: "土砂災害", layers: [
+    { id: "dosekiryu", title: "土石流 警戒区域・特別警戒区域", url: HZ + "05_dosekiryukeikaikuiki/{z}/{x}/{y}.png", minzoom: 2, maxzoom: 17, legend: LEG + "keikai_dosekiryu.png" },
+    { id: "kyukeisha", title: "急傾斜地の崩壊 警戒区域・特別警戒区域", url: HZ + "05_kyukeishakeikaikuiki/{z}/{x}/{y}.png", minzoom: 2, maxzoom: 17, legend: LEG + "keikai_kyukeisya.png" },
+    { id: "jisuberi", title: "地すべり 警戒区域・特別警戒区域", url: HZ + "05_jisuberikeikaikuiki/{z}/{x}/{y}.png", minzoom: 2, maxzoom: 17, legend: LEG + "keikai_jisuberi.png" },
+    { id: "nadare", title: "雪崩危険箇所", url: HZ + "05_nadarekikenkasyo_data/16/{z}/{x}/{y}.png", minzoom: 2, maxzoom: 17, legend: LEG + "dosha_kiken.png" },
+  ]},
+];
+const ALL = GROUPS.flatMap(g => g.layers);
+const active = new Set(ALL.filter(l => l.on).map(l => l.id));
+let opacity = 0.7;
+let showStations = false, showCams = false;
+let stations = null, cameras = null;
+const markers = [];
+
+function style(key) {
+  const [url, attr] = TILES[key];
+  return { version: 8, sources: { base: { type: "raster", tiles: [url], tileSize: 256, attribution: attr, maxzoom: 18 } },
+           layers: [{ id: "base", type: "raster", source: "base" }] };
+}
+const map = new maplibregl.Map({ container: "map", style: style("gsi-pale"), center: [137.15, 36.70], zoom: 10 });
+map.addControl(new maplibregl.NavigationControl(), "top-right");
+map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: false }), "top-right");
+map.addControl(new maplibregl.ScaleControl({ maxWidth: 120 }), "bottom-right");
+
+function applyLayers() {
+  for (const l of ALL) {
+    const sid = "hz-" + l.id;
+    const want = active.has(l.id);
+    if (want && !map.getSource(sid)) {
+      map.addSource(sid, { type: "raster", tiles: [l.url], tileSize: 256, minzoom: l.minzoom, maxzoom: l.maxzoom, attribution: "ハザードマップ:国土交通省" });
+      map.addLayer({ id: sid, type: "raster", source: sid, paint: { "raster-opacity": opacity } });
+    } else if (!want && map.getSource(sid)) {
+      map.removeLayer(sid); map.removeSource(sid);
+    } else if (want) {
+      map.setPaintProperty(sid, "raster-opacity", opacity);
+    }
+  }
+}
+
+function renderSide() {
+  let html = `<div style="display:flex;justify-content:space-between;align-items:center"><b>重ねる</b>
+    <span><small>濃さ</small> <input type="range" id="op" min="0.2" max="1" step="0.1" value="${opacity}"></span></div>`;
+  for (const g of GROUPS) {
+    html += `<h2>${g.name}</h2>`;
+    for (const l of g.layers) {
+      const on = active.has(l.id);
+      html += `<label><input type="checkbox" data-id="${l.id}" ${on ? "checked" : ""}> ${l.title}${l.note ? ` <small>${l.note}</small>` : ""}</label>`;
+      if (on && l.legend) html += `<div class="legend"><img src="${l.legend}" alt="凡例" loading="lazy"></div>`;
+    }
+  }
+  html += `<h2>重ねる（参考）</h2>
+    <label><input type="checkbox" id="chkSt" ${showStations ? "checked" : ""}> 水位観測所（現在値）</label>
+    <label><input type="checkbox" id="chkCam" ${showCams ? "checked" : ""}> 📷 河川カメラ</label>
+    <div style="margin-top:8px;color:var(--muted)"><small>凡例・出典: 国土交通省「重ねるハザードマップ」。想定は河川ごとに前提が異なるので、詳細は
+    <a href="https://disaportal.gsi.go.jp/maps/?ll=36.70,137.15&z=11" target="_blank" rel="noopener" style="color:var(--accent)">ポータル</a>で確認。</small></div>`;
+  side.innerHTML = html;
+  side.querySelectorAll("input[type=checkbox][data-id]").forEach(c => c.addEventListener("change", e => {
+    e.target.checked ? active.add(e.target.dataset.id) : active.delete(e.target.dataset.id);
+    applyLayers(); renderSide();
+  }));
+  document.getElementById("op").addEventListener("input", e => { opacity = +e.target.value; applyLayers(); });
+  document.getElementById("chkSt").addEventListener("change", e => { showStations = e.target.checked; renderMarkers(); });
+  document.getElementById("chkCam").addEventListener("change", e => { showCams = e.target.checked; renderMarkers(); });
+}
+
+async function getJson(name) {
+  try { return await (await fetch(name + "?t=" + Date.now(), { cache: "no-store" })).json(); } catch (e) { return null; }
+}
+const fmt = v => v == null ? "--" : (+v).toFixed(2);
+async function renderMarkers() {
+  markers.forEach(m => m.remove()); markers.length = 0;
+  if (showStations) {
+    stations = stations ?? await getJson("../latest.geojson");
+    for (const f of stations?.features ?? []) {
+      const p = f.properties;
+      if (p.pref !== "toyama" || p.stg == null) continue;
+      const el = document.createElement("div");
+      el.style.cssText = `width:9px;height:9px;border:1px solid #444;background:#fff;cursor:pointer;border-radius:${p.kind === "swstg" ? "2px" : "50%"};box-shadow:0 0 0 1px #fff`;
+      markers.push(new maplibregl.Marker({ element: el }).setLngLat(f.geometry.coordinates)
+        .setPopup(new maplibregl.Popup({ offset: 8 }).setHTML(`<b>${p.obs_nm}</b> <small>${p.kind === "swstg" ? "危機管理型" : "水位計"}</small><br>
+          <span style="font-size:20px;font-weight:700">${fmt(p.stg)}</span> m <small>${p.obs_time ?? ""}</small>
+          ${p.fld_stg != null ? `<br><small>氾濫開始/計画高水位 ${fmt(p.fld_stg)} m</small>` : ""}`)).addTo(map));
+    }
+  }
+  if (showCams) {
+    cameras = cameras ?? await getJson("../cameras.geojson");
+    for (const f of cameras?.features ?? []) {
+      const p = f.properties;
+      if (p.pref !== "toyama") continue;
+      const el = document.createElement("div");
+      el.style.cssText = "width:10px;height:10px;border:1px solid #333;background:#6cf;cursor:pointer;clip-path:polygon(0 25%,30% 25%,40% 0,60% 0,70% 25%,100% 25%,100% 100%,0 100%)";
+      markers.push(new maplibregl.Marker({ element: el }).setLngLat(f.geometry.coordinates)
+        .setPopup(new maplibregl.Popup({ offset: 8, maxWidth: "320px" }).setHTML(`<b>📷 ${p.name}</b><br>
+          <a href="${p.img_url}" target="_blank" rel="noopener"><img src="${p.img_url}?t=${Date.now()}" style="width:280px;display:block;border:1px solid #ccc" alt="現在の画像"></a>`)).addTo(map));
+    }
+  }
+}
+
+base.addEventListener("change", () => { map.setStyle(style(base.value)); map.once("style.load", applyLayers); });
+btnSide.onclick = () => { side.style.display = side.style.display === "none" ? "" : "none"; };
+map.on("load", () => { applyLayers(); renderSide(); });
+
+// ---- 合言葉（河川水位の地図と共通。Apps Script の VIEW_PASSWORD で照合）----
+let pw = "", authed = false;
+try { pw = localStorage.getItem("viewPw") || ""; } catch (e) { /* 無視 */ }
+async function verify(p) {
+  try {
+    const r = await (await fetch(`${API_URL}?auth=1&pw=${encodeURIComponent(p)}`)).json();
+    if (!r.ok) return false;
+    authed = true; pw = p;
+    document.body.classList.add("auth");
+    document.title = "富山 ハザードマップ";
+    try { localStorage.setItem("viewPw", p); } catch (e) { /* 無視 */ }
+    map.resize();
+    return true;
+  } catch (e) { return false; }
+}
+function logout() {
+  authed = false; pw = "";
+  document.body.classList.remove("auth");
+  try { localStorage.removeItem("viewPw"); } catch (e) { /* 無視 */ }
+}
+gateForm.onsubmit = async e => {
+  e.preventDefault();
+  gateMsg.textContent = "確認中…";
+  if (await verify(gatePw.value)) gateMsg.textContent = ""; else gateMsg.textContent = "×";
+};
+btnLogin.onclick = () => { if (confirm("この端末の合言葉を忘れてログアウトしますか？")) { logout(); location.reload(); } };
+if (pw) verify(pw).then(ok => { if (!ok) logout(); });
+</script>
+</body>
+</html>
