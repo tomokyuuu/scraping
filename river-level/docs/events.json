@@ -113,7 +113,7 @@
   "since": "2026/11/14 01:24",
   "trigger": "alert",
   "until": null,
-  "last_fetch": "2026/11/15 18:20",
+  "last_fetch": "2026/11/16 02:06",
   "max_station": {
    "obs_id": "1600000087",
    "obs_nm": "",
@@ -123,7 +123,7 @@
    "lv": 5,
    "lv_name": "氾濫開始/計画高水位"
   },
-  "over_warn": 8,
+  "over_warn": 10,
   "over_danger": 5,
   "flooded": 1,
   "flooded_names": [
@@ -133,7 +133,7 @@
   "camera_images": 308,
   "period": {
    "from": "2026/11/08 00:00",
-   "to": "2026/11/15 18:10"
+   "to": "2026/11/16 02:00"
   }
  }
 ]
