@@ -165,25 +165,27 @@
   "since": "2026/11/18 23:00",
   "trigger": "alert",
   "until": null,
-  "last_fetch": "2026/11/19 12:24",
+  "last_fetch": "2026/11/19 21:59",
   "max_station": {
-   "obs_id": "1700000056",
-   "obs_nm": "磐若川（磐若橋）",
+   "obs_id": "1700000043",
+   "obs_nm": "大慶寺川（新石立橋）",
    "pref": "ishikawa",
-   "max": 1.05,
-   "at": "2026/11/15 03:50",
-   "lv": 4,
-   "lv_name": "氾濫危険"
+   "max": 4.74,
+   "at": "2026/11/19 17:30",
+   "lv": 5,
+   "lv_name": "氾濫開始/計画高水位"
   },
-  "over_warn": 10,
-  "over_danger": 2,
-  "flooded": 0,
-  "flooded_names": [],
+  "over_warn": 14,
+  "over_danger": 4,
+  "flooded": 1,
+  "flooded_names": [
+   "大慶寺川（新石立橋）"
+  ],
   "cameras": 0,
   "camera_images": 0,
   "period": {
    "from": "2026/11/12 00:00",
-   "to": "2026/11/19 12:20"
+   "to": "2026/11/19 21:50"
   }
  }
 ]
