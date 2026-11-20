@@ -165,7 +165,7 @@
   "since": "2026/11/18 23:00",
   "trigger": "alert",
   "until": null,
-  "last_fetch": "2026/11/20 06:32",
+  "last_fetch": "2026/11/20 12:09",
   "max_station": {
    "obs_id": "1700000043",
    "obs_nm": "大慶寺川（新石立橋）",
@@ -175,8 +175,8 @@
    "lv": 5,
    "lv_name": "氾濫開始/計画高水位"
   },
-  "over_warn": 16,
-  "over_danger": 5,
+  "over_warn": 17,
+  "over_danger": 6,
   "flooded": 1,
   "flooded_names": [
    "大慶寺川（新石立橋）"
@@ -185,7 +185,7 @@
   "camera_images": 0,
   "period": {
    "from": "2026/11/12 00:00",
-   "to": "2026/11/20 06:20"
+   "to": "2026/11/20 12:00"
   }
  }
 ]
