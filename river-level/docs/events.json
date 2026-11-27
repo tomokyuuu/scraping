@@ -165,7 +165,7 @@
   "since": "2026/11/18 23:00",
   "trigger": "alert",
   "until": null,
-  "last_fetch": "2026/11/27 17:19",
+  "last_fetch": "2026/11/28 04:08",
   "max_station": {
    "obs_id": "8400000040",
    "obs_nm": "手取川左岸0.8k（西川合流点）",
@@ -177,16 +177,17 @@
   },
   "over_warn": 18,
   "over_danger": 8,
-  "flooded": 2,
+  "flooded": 3,
   "flooded_names": [
+   "衣川（衣川橋）",
    "大慶寺川（新石立橋）",
    "手取川左岸0.8k（西川合流点）"
   ],
-  "cameras": 6,
-  "camera_images": 1376,
+  "cameras": 7,
+  "camera_images": 1663,
   "period": {
    "from": "2026/11/12 00:00",
-   "to": "2026/11/27 08:40"
+   "to": "2026/11/28 04:00"
   }
  }
 ]
