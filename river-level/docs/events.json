@@ -165,7 +165,7 @@
   "since": "2026/11/18 23:00",
   "trigger": "alert",
   "until": null,
-  "last_fetch": "2026/11/28 11:02",
+  "last_fetch": "2026/11/28 19:22",
   "max_station": {
    "obs_id": "8400000040",
    "obs_nm": "手取川左岸0.8k（西川合流点）",
@@ -175,7 +175,7 @@
    "lv": 5,
    "lv_name": "氾濫開始/計画高水位"
   },
-  "over_warn": 18,
+  "over_warn": 19,
   "over_danger": 8,
   "flooded": 3,
   "flooded_names": [
@@ -184,10 +184,10 @@
    "手取川左岸0.8k（西川合流点）"
   ],
   "cameras": 7,
-  "camera_images": 1704,
+  "camera_images": 1753,
   "period": {
    "from": "2026/11/12 00:00",
-   "to": "2026/11/28 10:50"
+   "to": "2026/11/28 19:10"
   }
  }
 ]
